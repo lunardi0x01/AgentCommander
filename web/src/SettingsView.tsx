@@ -63,6 +63,45 @@ export function SettingsView({ settings, folders, onSettings, onBack }: Props) {
         </span>
       </label>
 
+      <h3 className="page-heading">Notifications</h3>
+      <p className="setting-detail">Desktop notifications on the computer running Agent Commander, even with no page open.</p>
+      <label className="setting">
+        <input type="checkbox" checked={settings.notifyNeedsYou} onChange={(e) => change({ notifyNeedsYou: e.target.checked })} />
+        <span>
+          <span className="setting-name">When a session needs you</span>
+          <span className="setting-detail">A permission request, a plan to approve or a question.</span>
+        </span>
+      </label>
+      <label className="setting">
+        <input type="checkbox" checked={settings.notifyDone} onChange={(e) => change({ notifyDone: e.target.checked })} />
+        <span>
+          <span className="setting-name">When a session finishes</span>
+          <span className="setting-detail">Also when a turn stops with an error.</span>
+        </span>
+      </label>
+      <div className="setting-row">
+        <span>
+          <span className="setting-name">Only for turns longer than</span>
+          <span className="setting-detail">Quick replies stay quiet. Applies to "finishes", not "needs you".</span>
+        </span>
+        <span>
+          <input
+            type="number"
+            className="number-input"
+            min={0}
+            max={3600}
+            defaultValue={settings.notifyMinSeconds}
+            key={settings.notifyMinSeconds}
+            disabled={!settings.notifyDone}
+            onBlur={(e) => {
+              const n = Number(e.target.value);
+              if (e.target.value !== "" && n !== settings.notifyMinSeconds) change({ notifyMinSeconds: n });
+            }}
+          />{" "}
+          seconds
+        </span>
+      </div>
+
       <h3 className="page-heading">New sessions</h3>
       <p className="setting-detail">What sessions start with. Each chat can still switch under its message box.</p>
       <div className="setting-row">

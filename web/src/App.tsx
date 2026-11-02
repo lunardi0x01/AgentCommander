@@ -17,6 +17,7 @@ import { api } from "./api.ts";
 import { machineKey, Navigator, type Notice, type Panel } from "./Navigator.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { clampWidth, ColumnResizer, savedWidth } from "./ColumnResizer.tsx";
+import { SidebarIcon } from "./icons.tsx";
 import { SidePanel } from "./SidePanel.tsx";
 import { SettingsView } from "./SettingsView.tsx";
 import { UsageView } from "./UsageView.tsx";
@@ -127,6 +128,32 @@ export function App() {
   const [transcriptVersion, setTranscriptVersion] = useState(0);
   const [navWidth, setNavWidth] = useState(() => savedWidth("nav"));
   const [sideWidth, setSideWidth] = useState(() => savedWidth("side"));
+  // Desktop only: the list column can be hidden (remembered per device).
+  const [navHidden, setNavHidden] = useState(() => {
+    try {
+      return localStorage.getItem("navHidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleNav = useCallback(() => {
+    setNavHidden((hidden) => {
+      try {
+        localStorage.setItem("navHidden", hidden ? "0" : "1");
+      } catch {}
+      return !hidden;
+    });
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleNav();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleNav]);
   const [resizing, setResizing] = useState(false);
   // On narrow screens only one column shows at a time.
   const [mobileView, setMobileView] = useState<"nav" | "chat" | "side">(
@@ -327,6 +354,9 @@ export function App() {
     setMobileView(selected || view.kind !== "chat" ? "chat" : "nav");
   };
 
+  // The most urgent session status, so a hidden list still shows "needs you".
+  const urgent = folders?.some((f) => f.live === "waiting") ? "waiting" : folders?.some((f) => f.live === "working") ? "working" : null;
+
   const showSide = (sideChoice ?? settings.sideOpenByDefault) && !!sideFolder;
 
   const showPanel = (next: Panel) => {
@@ -372,10 +402,11 @@ export function App() {
 
   return (
     <div
-      className={`app show-${mobileView}${showSide ? " with-side" : ""}${resizing ? " resizing" : ""}`}
+      className={`app show-${mobileView}${navHidden ? " nav-hidden" : ""}${showSide ? " with-side" : ""}${resizing ? " resizing" : ""}`}
       style={{ "--nav-width": `${navWidth}px`, "--side-width": `${sideWidth}px` } as React.CSSProperties}
     >
       <Navigator
+        onHide={toggleNav}
         machine={machine}
         folders={folders}
         sessions={sessions}
@@ -397,6 +428,12 @@ export function App() {
         onDeleteSessions={deleteSessions}
         onRefresh={refresh}
       />
+      {navHidden && (
+        <button className="icon-button expand-nav" title="Show the session list (Ctrl+B)" onClick={toggleNav}>
+          <SidebarIcon />
+          {urgent && <span className={`live-dot ${urgent}`} />}
+        </button>
+      )}
       <ColumnResizer column="nav" width={navWidth} other={showSide ? sideWidth : 0} onWidth={setNavWidth} onDragging={setResizing} />
       {view.kind === "settings" ? (
         <SettingsView
@@ -449,7 +486,7 @@ export function App() {
       )}
       {showSide && (
         <>
-          <ColumnResizer column="side" width={sideWidth} other={navWidth} onWidth={setSideWidth} onDragging={setResizing} />
+          <ColumnResizer column="side" width={sideWidth} other={navHidden ? 0 : navWidth} onWidth={setSideWidth} onDragging={setResizing} />
           <SidePanel
             dir={sideFolder!}
             folders={folders ?? []}

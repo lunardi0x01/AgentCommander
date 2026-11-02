@@ -506,6 +506,16 @@ function appSettings(body: Record<string, unknown>): Partial<AppSettings> {
     if (typeof body.sideOpenByDefault !== "boolean") throw new HttpError(400, "Expected sideOpenByDefault: boolean");
     change.sideOpenByDefault = body.sideOpenByDefault;
   }
+  for (const key of ["notifyDone", "notifyNeedsYou"] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "boolean") throw new HttpError(400, `Expected ${key}: boolean`);
+    change[key] = body[key];
+  }
+  if (body.notifyMinSeconds !== undefined) {
+    const n = body.notifyMinSeconds;
+    if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 3600) throw new HttpError(400, "Expected notifyMinSeconds: 0–3600");
+    change.notifyMinSeconds = Math.round(n);
+  }
   if (body.queueMode !== undefined) change.queueMode = permissionMode(body.queueMode);
   if (body.defaultMode !== undefined) change.defaultMode = body.defaultMode === null ? undefined : permissionMode(body.defaultMode);
   if (body.defaultModel !== undefined) {

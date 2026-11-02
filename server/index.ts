@@ -18,6 +18,7 @@ import { check, hasToken, initAccess, isLoopback } from "./auth.ts";
 import { startWatching } from "./events.ts";
 import { closeAllRuns } from "./runner.ts";
 import { startQueue } from "./queue.ts";
+import { startNotifications } from "./notify.ts";
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
@@ -94,6 +95,7 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 
 await initAccess();
 startWatching();
+startNotifications();
 startQueue().catch((err) => console.error("Queue:", err));
 server.listen(PORT, HOST, () => {
   const shownHost = HOST.includes(":") ? `[${HOST}]` : HOST;

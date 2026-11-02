@@ -4,7 +4,7 @@ import type { Selection, View } from "./App.tsx";
 import { api } from "./api.ts";
 import { DeletedPanel } from "./DeletedPanel.tsx";
 import { cacheIsCold, formatTokens, relativeTime, resetsIn, tildePath, useNow } from "./format.ts";
-import { ChevronIcon, ComputerIcon, FolderIcon, GearIcon, LogoIcon, MoonIcon, SunIcon } from "./icons.tsx";
+import { ChevronIcon, ComputerIcon, FolderIcon, GearIcon, LogoIcon, MoonIcon, SidebarIcon, SunIcon } from "./icons.tsx";
 import { Menu } from "./Menu.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
@@ -61,6 +61,7 @@ function SessionRow({ s, now, selecting, ticked, active, onTick, onSelect }: Ses
 export type Panel = "tree" | "projects" | "new" | "deleted";
 
 interface Props {
+  onHide: () => void; // collapse this column (desktop)
   machine: MachineInfo | null;
   folders: FolderInfo[] | null;
   sessions: Record<string, SessionSummary[]>;
@@ -172,6 +173,9 @@ export function Navigator(props: Props) {
           onClick={() => props.onView({ kind: props.view.kind === "settings" ? "chat" : "settings" })}
         >
           <GearIcon />
+        </button>
+        <button className="icon-button hide-nav" title="Hide this column (Ctrl+B)" onClick={props.onHide}>
+          <SidebarIcon />
         </button>
         <button
           className="icon-button"

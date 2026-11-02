@@ -108,6 +108,13 @@ function sessionIndex(): Promise<SessionIndex> {
   return index.promise;
 }
 
+// A session's title and folder, for notifications (null if it isn't indexed yet).
+export async function sessionLabel(id: string): Promise<{ title: string; dir: string } | null> {
+  const { sessions, live } = await sessionIndex();
+  const s = sessions.find((x) => x.sessionId === id);
+  return s?.cwd ? { title: toSummary(s, live).title, dir: s.cwd } : null;
+}
+
 export function invalidateSessions(): void {
   index = null;
 }
