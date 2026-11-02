@@ -14,7 +14,6 @@ import type { Selection } from "./App.tsx";
 import { api } from "./api.ts";
 import { BIG_CONTEXT_TOKENS, cacheIsCold, formatTokens, tildePath, useNow } from "./format.ts";
 import { FileChip, Message, Speaker } from "./Message.tsx";
-import { liveLabel, LiveDot } from "./Navigator.tsx";
 import { Composer } from "./Composer.tsx";
 import { LiveTurn } from "./LiveTurn.tsx";
 import { HandoffDialog } from "./HandoffDialog.tsx";
@@ -193,6 +192,23 @@ export function ChatView(props: Props) {
   // A big conversation whose cache has lapsed: the next message re-sends all of it.
   const coldWarning = !!context && context >= BIG_CONTEXT_TOKENS && cold && !liveElsewhere;
 
+  // Context size and cache warmth, at the right of the composer's bar.
+  const contextInfo = context ? (
+    <span
+      className={`context-info${coldWarning ? " cold" : ""}`}
+      title={
+        gemini
+          ? `${context.toLocaleString()} tokens of context, as Gemini last reported it.`
+          : `${context.toLocaleString()} tokens of context as of the last reply. ${
+              cold ? "The prompt cache has probably expired, so the next message re-reads all of it at full price." : "The prompt cache is probably still warm, so the next message is cheap."
+            }`
+      }
+    >
+      {!gemini && <span className={`cache-dot${cold ? " cold" : ""}`} />}
+      {formatTokens(context)} tokens{gemini ? "" : ` · ${cold ? "cache cold" : "cache warm"}`}
+    </span>
+  ) : null;
+
   const onScroll = () => {
     const el = scroller.current;
     if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -212,33 +228,9 @@ export function ChatView(props: Props) {
               onEditing={setEditingTitle}
               onRename={async (title) => onRenamed(selection.dir, await api.renameSession(selection.id, selection.dir, title))}
             />
-            <div className="chat-title-sub">
-              {machine && <>{machine.hostname} · </>}
-              {tildePath(selection.dir, machine?.home)}
-              {summary?.gitBranch && summary.gitBranch !== "HEAD" && <> · {summary.gitBranch}</>}
-            </div>
           </div>
         ) : (
           <div className="chat-title muted">No session selected</div>
-        )}
-        {context && gemini ? (
-          <span className="live-badge" title={`${context.toLocaleString()} tokens of context, as Gemini last reported it.`}>
-            {formatTokens(context)} tokens
-          </span>
-        ) : context ? (
-          <span
-            className={`live-badge${coldWarning ? " cold" : ""}`}
-            title={`${context.toLocaleString()} tokens of context as of the last reply. ${
-              cold ? "The prompt cache has probably expired, so the next message re-reads all of it at full price." : "The prompt cache is probably still warm, so the next message is cheap."
-            }`}
-          >
-            {formatTokens(context)} tokens · {cold ? "cache cold" : "cache warm"}
-          </span>
-        ) : null}
-        {summary?.live && (
-          <span className={`live-badge ${summary.live}`}>
-            <LiveDot status={summary.live} here={summary.liveHere} /> {liveLabel(summary.live, summary.liveHere)}
-          </span>
         )}
         {props.tabs}
         {selection && (
@@ -348,6 +340,7 @@ export function ChatView(props: Props) {
                 onStop={props.onInterrupt}
                 readAloud={readAloud}
                 onReadAloud={changeReadAloud}
+                contextInfo={contextInfo}
               />
             )}
           </div>

@@ -1066,20 +1066,25 @@ code {
 .session-row .live-dot {
   align-self: center;
 }
-.live-badge {
-  flex: none;
-  display: flex;
+.context-info {
+  margin-left: auto;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 10px;
 }
-.live-badge.cold {
-  color: var(--text);
-  border-color: var(--warning);
+.context-info.cold {
+  color: var(--warning);
+}
+.cache-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.cache-dot.cold {
+  background: var(--warning);
 }
 .cold-warning {
   margin-bottom: 8px;

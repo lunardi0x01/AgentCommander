@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BACKEND_LABEL, type Attachment, type BackendId, type ModelOption, type PermissionMode, type SessionSettings, type SlashCommandInfo } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { MAX_FILES, readAttachment, type Picked } from "./attachments.ts";
@@ -19,6 +19,7 @@ interface Props {
   onStop: () => Promise<void>;
   readAloud: boolean; // speak each finished reply (per device)
   onReadAloud: (on: boolean) => void;
+  contextInfo?: ReactNode; // context size and cache warmth, at the bar's right end
 }
 
 // Commands per folder and agent, fetched once per page load (the server caches too).
@@ -49,7 +50,7 @@ function matching(commands: SlashCommandInfo[], typed: string): SlashCommandInfo
 // working, Stop interrupts; a message sent meanwhile is queued for it.
 // Typing "/" at the start opens a menu of the folder's slash commands.
 // Files can be attached (button, drop, paste) and text dictated (mic).
-export function Composer({ dir, backend, modes, busy, settings, models, onSettings, onSend, onStop, readAloud, onReadAloud }: Props) {
+export function Composer({ dir, backend, modes, busy, settings, models, onSettings, onSend, onStop, readAloud, onReadAloud, contextInfo }: Props) {
   const agent = BACKEND_LABEL[backend];
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Picked[]>([]);
@@ -370,6 +371,7 @@ export function Composer({ dir, backend, modes, busy, settings, models, onSettin
             <SpeakerIcon />
           </button>
         )}
+        {contextInfo}
       </div>
     </div>
   );
