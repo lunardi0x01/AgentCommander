@@ -329,6 +329,8 @@ export function ChatView(props: Props) {
               <OpenElsewhere remote={summary?.remote} onClose={props.onClose} />
             ) : (
               <Composer
+                key={`${selection.backend}:${selection.id}`}
+                draftKey={`${selection.backend}:${selection.id}`}
                 dir={selection.dir}
                 backend={props.backend}
                 modes={props.modes}

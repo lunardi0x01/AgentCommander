@@ -19,8 +19,12 @@ interface Props {
   onStop: () => Promise<void>;
   readAloud: boolean; // speak each finished reply (per device)
   onReadAloud: (on: boolean) => void;
+  draftKey: string; // the session: its unsent text and files are kept while you look elsewhere
   contextInfo?: ReactNode; // context size and cache warmth, at the bar's right end
 }
+
+// Unsent drafts per session, kept in memory so switching sessions doesn't lose them.
+const drafts = new Map<string, { text: string; files: Picked[] }>();
 
 // Commands per folder and agent, fetched once per page load (the server caches too).
 const commandCache = new Map<string, Promise<SlashCommandInfo[]>>();
@@ -50,10 +54,10 @@ function matching(commands: SlashCommandInfo[], typed: string): SlashCommandInfo
 // working, Stop interrupts; a message sent meanwhile is queued for it.
 // Typing "/" at the start opens a menu of the folder's slash commands.
 // Files can be attached (button, drop, paste) and text dictated (mic).
-export function Composer({ dir, backend, modes, busy, settings, models, onSettings, onSend, onStop, readAloud, onReadAloud, contextInfo }: Props) {
+export function Composer({ dir, backend, modes, busy, settings, models, onSettings, onSend, onStop, readAloud, onReadAloud, draftKey, contextInfo }: Props) {
   const agent = BACKEND_LABEL[backend];
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<Picked[]>([]);
+  const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? "");
+  const [files, setFiles] = useState<Picked[]>(() => drafts.get(draftKey)?.files ?? []);
   const [dragging, setDragging] = useState(false);
   // Dictation: record, then transcribe on the server and add the words.
   const [mic, setMic] = useState<"unavailable" | "idle" | "recording" | "transcribing">("unavailable");
@@ -104,6 +108,11 @@ export function Composer({ dir, backend, modes, busy, settings, models, onSettin
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
+
+  useEffect(() => {
+    if (text || files.length) drafts.set(draftKey, { text, files });
+    else drafts.delete(draftKey);
+  }, [draftKey, text, files]);
 
   const change = (value: string) => {
     setText(value);

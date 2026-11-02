@@ -18,22 +18,16 @@ export function TerminalView({ dirs, dir, active, home, hostname, onTab, onClose
     <main className="chat terminal-view" hidden={!active}>
       <header className="chat-header">
         <div className="chat-title">
-          <div className="chat-title-main">
-            <span className="chat-title-text">Terminal</span>
+          <div className="chat-title-main" title={dir ? `${hostname ? hostname + " · " : ""}${tildePath(dir, home)}` : undefined}>
+            <span className="chat-title-text">{dir ? `Terminal · ${dir.split("/").filter(Boolean).pop() ?? "/"}` : "Terminal"}</span>
           </div>
-          {dir && (
-            <div className="chat-title-sub">
-              {hostname && <>{hostname} · </>}
-              {tildePath(dir, home)}
-            </div>
-          )}
         </div>
+        <MainTabs tab="terminal" onTab={onTab} />
         {dir && (
-          <button className="secondary-button" title="End this folder's shell" onClick={() => onClose(dir)}>
-            Close shell
+          <button className="icon-button" title="Close this folder's shell" aria-label="Close shell" onClick={() => onClose(dir)}>
+            ✕
           </button>
         )}
-        <MainTabs tab="terminal" onTab={onTab} />
       </header>
       <div className="terminal-area">
         {dirs.map((d) => (

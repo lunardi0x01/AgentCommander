@@ -2209,9 +2209,6 @@ code {
 .terminal-pane[hidden] {
   display: none;
 }
-.terminal-view .chat-header .secondary-button {
-  margin-right: 8px;
-}
 .terminal-area {
   position: relative;
   flex: 1;
