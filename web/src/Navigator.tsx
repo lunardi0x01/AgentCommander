@@ -4,16 +4,14 @@ import type { Selection, View } from "./App.tsx";
 import { api } from "./api.ts";
 import { DeletedPanel } from "./DeletedPanel.tsx";
 import { cacheIsCold, formatTokens, relativeTime, resetsIn, shortTime, tildePath, useNow } from "./format.ts";
-import { ChevronIcon, ComputerIcon, FolderIcon, GearIcon, LogoIcon, MoonIcon, SidebarIcon, SunIcon } from "./icons.tsx";
+import { ChevronIcon, FolderIcon, GearIcon, LogoIcon, MoonIcon, SidebarIcon, SunIcon } from "./icons.tsx";
 import { Menu } from "./Menu.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import { useTheme } from "./theme.ts";
 
-// Which agent a session belongs to, instead of a heading per agent. Claude is
-// the usual one, so only other agents are tagged (G for Gemini): more room for titles.
+// Which agent a session belongs to, instead of a heading per agent: C (orange) for Claude, G (blue) for Gemini.
 function BackendTag({ backend = "claude" }: { backend?: BackendId }) {
-  if (backend === "claude") return null;
   return (
     <span className={`backend-tag ${backend}`} title={BACKEND_LABEL[backend]}>
       {BACKEND_LABEL[backend][0]}
@@ -103,8 +101,6 @@ export function liveLabel(status: LiveStatus, here: boolean | undefined): string
   return `${here ? "Running here" : "Open in Claude Code"} · ${STATUS_WORDS[status]}`;
 }
 
-const LIVE_URGENCY: LiveStatus[] = ["idle", "working", "waiting"];
-
 // Filled dot: running here. Ring: open elsewhere.
 export function LiveDot({ status, here }: { status: LiveStatus; here?: boolean }) {
   return <span className={`live-dot ${status}${here ? "" : " elsewhere"}`} title={liveLabel(status, here)} />;
@@ -115,8 +111,6 @@ export function LiveDot({ status, here }: { status: LiveStatus; here?: boolean }
 function LiveSlot({ status, here }: { status?: LiveStatus; here?: boolean }) {
   return <span className="live-slot">{status && <LiveDot status={status} here={here} />}</span>;
 }
-
-export const machineKey = (hostname: string) => `machine:${hostname}`;
 
 // A message under the header. Errors stay until dismissed; others fade by
 // themselves (deleted sessions can be brought back with Restore Sessions).
@@ -166,18 +160,35 @@ export function Navigator(props: Props) {
     }
   };
 
-  const hostname = machine?.hostname ?? "…";
-  const machineOpen = !machine || expanded.has(machineKey(machine.hostname));
-  const machineLive = folders?.reduce<LiveStatus | undefined>(
-    (worst, f) => (f.live && (!worst || LIVE_URGENCY.indexOf(f.live) > LIVE_URGENCY.indexOf(worst)) ? f.live : worst),
-    undefined,
-  );
-
   return (
     <nav className="navigator">
       <header className="app-header">
         <LogoIcon />
         <span className="app-name">Agent Commander</span>
+      {!selecting && (
+        <Menu
+          title={`Actions for ${machine?.hostname ?? "this computer"}`}
+          onOpen={() => api.deleted().then((list) => setDeletedCount(list.length), () => setDeletedCount(null))}
+          items={[
+            { label: "New Project…", onClick: () => props.onPanel("new") },
+            { label: "Choose Projects…", onClick: () => props.onPanel("projects") },
+            "divider",
+            {
+              label: "Delete Sessions…",
+              onClick: () => {
+                setNotice(null);
+                setSelecting(true);
+              },
+            },
+            {
+              label: deletedCount ? `Restore Sessions… (${deletedCount})` : "Restore Sessions…",
+              onClick: () => props.onPanel("deleted"),
+              disabled: deletedCount === 0,
+              hint: deletedCount === 0 ? "Nothing to restore" : undefined,
+            },
+          ]}
+        />
+      )}
         <button
           className={`icon-button${props.view.kind === "settings" ? " active" : ""}`}
           title="Settings"
@@ -234,117 +245,75 @@ export function Navigator(props: Props) {
           )}
 
           <div className="tree">
-            {/* One computer for now; more will be listed here later. */}
-            <div className="machine-row">
-              <button
-                className="tree-toggle"
-                onClick={() => machine && props.onToggle(machineKey(machine.hostname))}
-                aria-expanded={machineOpen}
-              >
-                <ChevronIcon open={machineOpen} />
-                <span className="tree-icon">
-                  <ComputerIcon />
-                </span>
-                <span className="machine-name">{hostname}</span>
-                <span className="machine-tag">this computer</span>
-                <LiveSlot status={machineOpen ? undefined : machineLive} here={folders?.some((f) => f.liveHere)} />
-              </button>
-              {!selecting && (
-                <Menu
-                  title={`Actions for ${hostname}`}
-                  onOpen={() => api.deleted().then((list) => setDeletedCount(list.length), () => setDeletedCount(null))}
-                  items={[
-                    { label: "New Project…", onClick: () => props.onPanel("new") },
-                    { label: "Choose Projects…", onClick: () => props.onPanel("projects") },
-                    "divider",
-                    {
-                      label: "Delete Sessions…",
-                      onClick: () => {
-                        setNotice(null);
-                        setSelecting(true);
-                      },
-                    },
-                    {
-                      label: deletedCount ? `Restore Sessions… (${deletedCount})` : "Restore Sessions…",
-                      onClick: () => props.onPanel("deleted"),
-                      disabled: deletedCount === 0,
-                      hint: deletedCount === 0 ? "Nothing to restore" : undefined,
-                    },
-                  ]}
-                />
+            {/* One computer for now: its actions are in the header's ⋯ menu. A rail of computers could go beside this list later. */}
+            <ul className="tree-children top">
+              {folders === null && <li className="muted tree-note">Loading…</li>}
+              {folders?.length === 0 && (
+                <li className="tree-note">
+                  <span className="muted">No projects chosen yet. </span>
+                  <button className="text-button inline" onClick={() => props.onPanel("projects")}>
+                    Choose Projects
+                  </button>
+                </li>
               )}
-            </div>
-
-            {machineOpen && (
-              <ul className="tree-children">
-                {folders === null && <li className="muted tree-note">Loading…</li>}
-                {folders?.length === 0 && (
-                  <li className="tree-note">
-                    <span className="muted">No projects chosen yet. </span>
-                    <button className="text-button inline" onClick={() => props.onPanel("projects")}>
-                      Choose Projects
-                    </button>
-                  </li>
-                )}
-                {folders?.map((folder) => {
-                  const open = expanded.has(folder.path);
-                  const list = sessions[folder.path];
-                  const queued = props.queue?.items.filter((i) => i.dir === folder.path && i.status === "queued").length ?? 0;
-                  return (
-                    <li key={folder.path}>
-                      <div className={`folder-row${selected?.isNew && selected.dir === folder.path ? " active" : ""}`}>
-                        <button
-                          className="tree-toggle"
-                          title={tildePath(folder.path, machine?.home)}
-                          onClick={() => props.onToggle(folder.path)}
-                          aria-expanded={open}
-                        >
-                          <ChevronIcon open={open} />
-                          <span className="tree-icon">
-                            <FolderIcon />
-                          </span>
-                          <span className="folder-name">{folder.name}</span>
-                          <span className="count">[{folder.sessionCount}]</span>
-                          <LiveSlot status={folder.live} here={folder.liveHere} />
-                        </button>
-                        {!selecting && (
-                          <Menu
-                            title={`Actions for ${folder.name}`}
-                            items={[
-                              { label: "New Claude Session…", onClick: () => props.onNewSession(folder.path) },
-                              { label: "New Gemini Session…", onClick: () => props.onNewSession(folder.path, "gemini") },
-                              {
-                                label: queued ? `Notes & Queue… (${queued})` : "Notes & Queue…",
-                                detail: "Notes, docs and prompts to run when you have usage",
-                                onClick: () => props.onSide(folder.path),
-                              },
-                            ]}
-                          />
-                        )}
-                      </div>
-                      {open && (
-                        <ul className="tree-children sessions">
-                          {!list && <li className="muted tree-note">Loading…</li>}
-                          {list?.map((s) => (
-                            <li key={s.id}>
-                              <SessionRow
-                                s={s}
-                                now={now}
-                                selecting={selecting}
-                                ticked={ticked.has(s.id)}
-                                active={selected?.id === s.id}
-                                onTick={() => tick(s.id, folder.path)}
-                                onSelect={() => props.onSelect({ dir: folder.path, id: s.id, backend: s.backend })}
-                              />
-                            </li>
-                          ))}
-                        </ul>
+              {folders?.map((folder) => {
+                const open = expanded.has(folder.path);
+                const list = sessions[folder.path];
+                const queued = props.queue?.items.filter((i) => i.dir === folder.path && i.status === "queued").length ?? 0;
+                return (
+                  <li key={folder.path}>
+                    <div className={`folder-row${selected?.isNew && selected.dir === folder.path ? " active" : ""}`}>
+                      <button
+                        className="tree-toggle"
+                        title={tildePath(folder.path, machine?.home)}
+                        onClick={() => props.onToggle(folder.path)}
+                        aria-expanded={open}
+                      >
+                        <ChevronIcon open={open} />
+                        <span className="tree-icon">
+                          <FolderIcon />
+                        </span>
+                        <span className="folder-name">{folder.name}</span>
+                        <span className="count">[{folder.sessionCount}]</span>
+                        <LiveSlot status={folder.live} here={folder.liveHere} />
+                      </button>
+                      {!selecting && (
+                        <Menu
+                          title={`Actions for ${folder.name}`}
+                          items={[
+                            { label: "New Claude Session…", onClick: () => props.onNewSession(folder.path) },
+                            { label: "New Gemini Session…", onClick: () => props.onNewSession(folder.path, "gemini") },
+                            {
+                              label: queued ? `Notes & Queue… (${queued})` : "Notes & Queue…",
+                              detail: "Notes, docs and prompts to run when you have usage",
+                              onClick: () => props.onSide(folder.path),
+                            },
+                          ]}
+                        />
                       )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                    </div>
+                    {open && (
+                      <ul className="tree-children sessions">
+                        {!list && <li className="muted tree-note">Loading…</li>}
+                        {list?.map((s) => (
+                          <li key={s.id}>
+                            <SessionRow
+                              s={s}
+                              now={now}
+                              selecting={selecting}
+                              ticked={ticked.has(s.id)}
+                              active={selected?.id === s.id}
+                              onTick={() => tick(s.id, folder.path)}
+                              onSelect={() => props.onSelect({ dir: folder.path, id: s.id, backend: s.backend })}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
 
           {selecting && (

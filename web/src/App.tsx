@@ -14,7 +14,7 @@ import {
   type SessionSummary,
 } from "../../shared/types.ts";
 import { api } from "./api.ts";
-import { machineKey, Navigator, type Notice, type Panel } from "./Navigator.tsx";
+import { Navigator, type Notice, type Panel } from "./Navigator.tsx";
 import { ChatView } from "./ChatView.tsx";
 import { clampWidth, ColumnResizer, savedWidth } from "./ColumnResizer.tsx";
 import { SidebarIcon } from "./icons.tsx";
@@ -187,11 +187,7 @@ export function App() {
 
   useEffect(() => {
     api.machine().then(
-      (info) => {
-        setMachine(info);
-        // First visit on this device: show the computer opened.
-        if (savedExpanded() === null) setExpanded((prev) => new Set([...prev, machineKey(info.hostname)]));
-      },
+      setMachine,
       (err) => setError(String(err.message ?? err)),
     );
     refresh();

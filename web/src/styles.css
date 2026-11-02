@@ -301,6 +301,9 @@ code {
 .tree-children {
   --indent: 26px;
 }
+.tree-children.top {
+  --indent: 12px;
+}
 .tree-children .tree-children {
   --indent: 64px;
 }
@@ -384,7 +387,7 @@ code {
    rows have a ⋯ menu after it), so dots and times line up down the tree. */
 .live-slot {
   flex: none;
-  width: 8px;
+  width: 10px;
   display: inline-grid;
   place-items: center;
 }
@@ -428,13 +431,13 @@ code {
   gap: 7px;
   width: 100%;
   min-height: 27px;
-  padding: 2px 12px 2px 42px;
+  padding: 2px 12px 2px 30px;
 }
 .session-row.active {
   background: var(--bg-active);
 }
 .session-row.selectable {
-  padding-left: 40px;
+  padding-left: 28px;
 }
 /* C / G: which agent, in place of a heading per agent. */
 .backend-tag {
@@ -447,7 +450,10 @@ code {
   font-weight: 700;
   line-height: 14px;
   text-align: center;
-  color: #7aa7e8; /* Gemini */
+  color: var(--accent); /* Claude */
+}
+.backend-tag.gemini {
+  color: #7aa7e8;
 }
 .session-title {
   flex: 1;
@@ -1040,8 +1046,8 @@ code {
 .live-dot {
   flex: none;
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--ok);
 }
@@ -1318,13 +1324,13 @@ code {
 /* A ring instead of a filled dot: open elsewhere (terminal, Remote Control). */
 .live-dot.elsewhere {
   background: transparent;
-  box-shadow: inset 0 0 0 1.6px var(--ok);
+  box-shadow: inset 0 0 0 2px var(--ok);
 }
 .live-dot.elsewhere.working {
-  box-shadow: inset 0 0 0 1.6px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .live-dot.elsewhere.waiting {
-  box-shadow: inset 0 0 0 1.6px #e0a63a;
+  box-shadow: inset 0 0 0 2px #e0a63a;
 }
 
 .elsewhere-bar {
