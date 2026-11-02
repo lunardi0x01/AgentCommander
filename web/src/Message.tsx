@@ -3,7 +3,7 @@ import { ChevronIcon, FileIcon, LogoIcon, SpeakerIcon, StopSquareIcon } from "./
 import { BACKEND_LABEL, type BackendId, type Block, type ChatMessage, type ImageBlock } from "../../shared/types.ts";
 import { Markdown } from "./Markdown.tsx";
 import { speak, canSpeak, stopSpeaking, useSpeaking } from "./speech.ts";
-import { ToolCall } from "./ToolCall.tsx";
+import { ToolCall, ToolImages } from "./ToolCall.tsx";
 
 interface Props {
   message: ChatMessage;
@@ -132,12 +132,14 @@ function Steps({ blocks }: { blocks: Block[] }) {
         <ChevronIcon open={open} /> {stepsLabel(thought, tools.length)}
         {failed > 0 && <span className="steps-failed"> · {failed} failed</span>}
       </button>
-      {open && (
+      {open ? (
         <div className="steps-body">
           {blocks.map((b, i) => (
             <AssistantBlock key={i} block={b} />
           ))}
         </div>
+      ) : (
+        tools.map((b, i) => <ToolImages key={i} tool={b} />)
       )}
     </div>
   );

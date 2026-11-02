@@ -625,6 +625,9 @@ code {
   display: inline-block;
   margin: 6px 0;
 }
+.tool-images .image {
+  max-height: 520px;
+}
 .image {
   max-width: 100%;
   max-height: 320px;

@@ -57,6 +57,20 @@ export function ToolInput({ name, input }: { name: string; input: Input }) {
   return <pre className="tool-code">{JSON.stringify(input, null, 2)}</pre>;
 }
 
+// Images a tool returned (e.g. Read on a PNG) show under the call even when it
+// is collapsed, so what Claude looked at or made is visible without digging.
+export function ToolImages({ tool }: { tool: ToolBlock }) {
+  const images = tool.result?.images ?? [];
+  if (!images.length) return null;
+  return (
+    <div className="tool-images">
+      {images.map((img, i) => (
+        <Image key={i} image={img} />
+      ))}
+    </div>
+  );
+}
+
 export function ToolCall({ tool }: { tool: ToolBlock }) {
   const [open, setOpen] = useState(false);
   const input = (tool.input && typeof tool.input === "object" ? tool.input : {}) as Input;
@@ -81,13 +95,11 @@ export function ToolCall({ tool }: { tool: ToolBlock }) {
                   {tool.result.truncated && "\n… (truncated)"}
                 </pre>
               )}
-              {tool.result.images.map((img, i) => (
-                <Image key={i} image={img} />
-              ))}
             </>
           )}
         </div>
       )}
+      <ToolImages tool={tool} />
     </div>
   );
 }

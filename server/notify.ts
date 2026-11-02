@@ -25,6 +25,7 @@ const ENV = {
 let warned = false;
 
 function show(summary: string, body: string): void {
+  console.log(`Notification: ${summary}`);
   execFile("notify-send", ["--app-name=Agent Commander", "--expire-time=10000", "--", summary, body], { env: ENV }, (err) => {
     if (err && !warned) {
       warned = true;
@@ -62,7 +63,12 @@ export function startNotifications(): void {
     } else if ((run.status === "idle" || run.status === "error") && wasActive) {
       const seconds = (now - prev!.since) / 1000;
       getSettings()
-        .then((s) => void (s.notifyDone && (run.status === "error" || seconds >= s.notifyMinSeconds) && notify(id, "done", run)))
+        .then((s) => {
+          const send = s.notifyDone && (run.status === "error" || seconds >= s.notifyMinSeconds);
+          // Logged so "why no notification?" can be answered from the journal.
+          if (!send) console.log(`Notification skipped: turn took ${Math.round(seconds)}s (${s.notifyDone ? `minimum ${s.notifyMinSeconds}s` : "off"})`);
+          else void notify(id, "done", run);
+        })
         .catch(() => {});
     }
   });
