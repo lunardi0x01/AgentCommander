@@ -43,6 +43,7 @@ interface Props {
   onRenamed: (dir: string, summary: SessionSummary) => void;
   onDelete: () => void;
   onBack: () => void;
+  tabs?: React.ReactNode; // Chat | Terminal switch, when the terminal is available
 }
 
 type Load = { state: "idle" } | { state: "loading" } | { state: "error"; error: string } | { state: "ready"; messages: ChatMessage[] };
@@ -239,6 +240,7 @@ export function ChatView(props: Props) {
             <LiveDot status={summary.live} here={summary.liveHere} /> {liveLabel(summary.live, summary.liveHere)}
           </span>
         )}
+        {props.tabs}
         {selection && (
           <Menu
             title="Session actions"

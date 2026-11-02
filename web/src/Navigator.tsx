@@ -84,6 +84,7 @@ interface Props {
   onNewSession: (dir: string, backend?: BackendId) => void;
   view: View;
   onView: (view: View) => void;
+  onTerminal?: (dir: string) => void; // open the folder's shell (desktop; when the terminal is on)
   onSide: (dir: string) => void; // open the notes and queue column for a folder
   usage: UsageInfo | null;
   queue: QueueState | null;

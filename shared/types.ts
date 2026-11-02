@@ -263,10 +263,11 @@ export interface AppSettings {
   queueMode: PermissionMode; // queued tasks run unattended, so Ask would stall them
   notifyDone: boolean; // desktop notification on this computer when a turn finishes
   notifyNeedsYou: boolean; // ...and when a session waits for a permission, plan or answer
+  terminalEnabled: boolean; // the Terminal tab (a shell as you, in a project folder)
   notifyMinSeconds: number; // "finished" only for turns at least this long (quick replies stay quiet)
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { hideThinkingAndTools: false, sideOpenByDefault: true, queueMode: "acceptEdits", notifyDone: true, notifyNeedsYou: true, notifyMinSeconds: 20 };
+export const DEFAULT_SETTINGS: AppSettings = { hideThinkingAndTools: false, sideOpenByDefault: true, queueMode: "acceptEdits", notifyDone: true, notifyNeedsYou: true, notifyMinSeconds: 20, terminalEnabled: true };
 
 // A project's NOTES.md. mtime 0: the file doesn't exist yet.
 export interface NotesFile {

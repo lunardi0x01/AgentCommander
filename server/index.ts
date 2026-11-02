@@ -19,6 +19,7 @@ import { startWatching } from "./events.ts";
 import { closeAllRuns } from "./runner.ts";
 import { startQueue } from "./queue.ts";
 import { startNotifications } from "./notify.ts";
+import { handleUpgrade } from "./terminal.ts";
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
@@ -83,6 +84,13 @@ const server = http.createServer(async (req, res) => {
     console.error(err);
     if (!res.headersSent) sendJson(res, 500, { error: "Internal error" });
   }
+});
+
+server.on("upgrade", (req, socket, head) => {
+  handleUpgrade(req, socket, head).catch((err) => {
+    console.error(err);
+    socket.destroy();
+  });
 });
 
 // Stop the Claude processes we run along with the server.

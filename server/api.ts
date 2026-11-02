@@ -506,7 +506,7 @@ function appSettings(body: Record<string, unknown>): Partial<AppSettings> {
     if (typeof body.sideOpenByDefault !== "boolean") throw new HttpError(400, "Expected sideOpenByDefault: boolean");
     change.sideOpenByDefault = body.sideOpenByDefault;
   }
-  for (const key of ["notifyDone", "notifyNeedsYou"] as const) {
+  for (const key of ["notifyDone", "notifyNeedsYou", "terminalEnabled"] as const) {
     if (body[key] === undefined) continue;
     if (typeof body[key] !== "boolean") throw new HttpError(400, `Expected ${key}: boolean`);
     change[key] = body[key];

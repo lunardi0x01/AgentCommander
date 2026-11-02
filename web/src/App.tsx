@@ -21,6 +21,8 @@ import { SidebarIcon } from "./icons.tsx";
 import { SidePanel } from "./SidePanel.tsx";
 import { SettingsView } from "./SettingsView.tsx";
 import { UsageView } from "./UsageView.tsx";
+import { MainTabs, type MainTab } from "./MainTabs.tsx";
+import { TerminalView } from "./TerminalView.tsx";
 
 export interface Selection {
   dir: string;
@@ -128,6 +130,21 @@ export function App() {
   const [transcriptVersion, setTranscriptVersion] = useState(0);
   const [navWidth, setNavWidth] = useState(() => savedWidth("nav"));
   const [sideWidth, setSideWidth] = useState(() => savedWidth("side"));
+  // The middle column's Chat | Terminal tabs. A shell per project folder stays
+  // connected while another tab shows; Close shell (or leaving the page) ends it.
+  const [mainTab, setMainTab] = useState<MainTab>("chat");
+  const [termDirs, setTermDirs] = useState<string[]>([]);
+  const [termDir, setTermDir] = useState<string | null>(null);
+  const openTerminal = (dir: string) => {
+    setTermDirs((prev) => (prev.includes(dir) ? prev : [...prev, dir]));
+    setTermDir(dir);
+    setMainTab("terminal");
+    setView({ kind: "chat" });
+  };
+  const closeTerminal = (dir: string) => {
+    setTermDirs((prev) => prev.filter((d) => d !== dir));
+    setMainTab("chat");
+  };
   // Desktop only: the list column can be hidden (remembered per device).
   const [navHidden, setNavHidden] = useState(() => {
     try {
@@ -146,6 +163,8 @@ export function App() {
   }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+B belongs to the terminal (tmux's prefix) while one has focus.
+      if ((e.target as Element | null)?.closest?.(".terminal-pane")) return;
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
         toggleNav();
@@ -316,6 +335,7 @@ export function App() {
   };
 
   const select = (sel: Selection | null) => {
+    setMainTab("chat");
     setSelected(sel);
     setSideDir(null);
     setView({ kind: "chat" });
@@ -352,6 +372,9 @@ export function App() {
 
   // The most urgent session status, so a hidden list still shows "needs you".
   const urgent = folders?.some((f) => f.live === "waiting") ? "waiting" : folders?.some((f) => f.live === "working") ? "working" : null;
+
+  const terminalOn = settings.terminalEnabled;
+  const showTerminal = terminalOn && mainTab === "terminal" && view.kind === "chat" && !!termDir;
 
   const showSide = (sideChoice ?? settings.sideOpenByDefault) && !!sideFolder;
 
@@ -417,6 +440,7 @@ export function App() {
         view={view}
         onView={openView}
         onSide={openSide}
+        onTerminal={terminalOn ? openTerminal : undefined}
         usage={usage}
         queue={queue}
         notice={notice}
@@ -431,6 +455,7 @@ export function App() {
         </button>
       )}
       <ColumnResizer column="nav" width={navWidth} other={showSide ? sideWidth : 0} onWidth={setNavWidth} onDragging={setResizing} />
+      <div className="main-slot" style={{ display: showTerminal ? "none" : "contents" }}>
       {view.kind === "settings" ? (
         <SettingsView
           settings={settings}
@@ -478,7 +503,20 @@ export function App() {
         onRenamed={renamed}
         onDelete={deleteSelected}
         onBack={() => setMobileView("nav")}
+        tabs={terminalOn && selected ? <MainTabs tab="chat" onTab={(t) => t === "terminal" && openTerminal(selected.dir)} /> : undefined}
       />
+      )}
+      </div>
+      {terminalOn && termDirs.length > 0 && (
+        <TerminalView
+          dirs={termDirs}
+          dir={termDir}
+          active={showTerminal}
+          home={machine?.home}
+          hostname={machine?.hostname}
+          onTab={setMainTab}
+          onClose={closeTerminal}
+        />
       )}
       {showSide && (
         <>
