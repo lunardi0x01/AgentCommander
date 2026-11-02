@@ -14,6 +14,9 @@ export function relativeTime(ms: number, now = Date.now()): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
+// The same, shortened for the session list: "now", "5m", "3h", "2d", "3w", "4mo", "2y".
+export const shortTime = (ms: number, now = Date.now()): string => relativeTime(ms, now).replace(/^just now$/, "now").replace(" ago", "");
+
 // Current time, refreshed every minute so relative times stay accurate.
 export function useNow(): number {
   const [now, setNow] = useState(Date.now);

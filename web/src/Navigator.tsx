@@ -3,14 +3,23 @@ import { BACKEND_LABEL, type BackendId, type FolderInfo, type LiveStatus, type M
 import type { Selection, View } from "./App.tsx";
 import { api } from "./api.ts";
 import { DeletedPanel } from "./DeletedPanel.tsx";
-import { cacheIsCold, formatTokens, relativeTime, resetsIn, tildePath, useNow } from "./format.ts";
+import { cacheIsCold, formatTokens, relativeTime, resetsIn, shortTime, tildePath, useNow } from "./format.ts";
 import { ChevronIcon, ComputerIcon, FolderIcon, GearIcon, LogoIcon, MoonIcon, SidebarIcon, SunIcon } from "./icons.tsx";
 import { Menu } from "./Menu.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import { useTheme } from "./theme.ts";
 
-const BACKENDS = ["claude", "gemini"] as const;
+// Which agent a session belongs to, instead of a heading per agent. Claude is
+// the usual one, so only other agents are tagged (G for Gemini): more room for titles.
+function BackendTag({ backend = "claude" }: { backend?: BackendId }) {
+  if (backend === "claude") return null;
+  return (
+    <span className={`backend-tag ${backend}`} title={BACKEND_LABEL[backend]}>
+      {BACKEND_LABEL[backend][0]}
+    </span>
+  );
+}
 
 interface SessionRowProps {
   s: SessionSummary;
@@ -23,7 +32,8 @@ interface SessionRowProps {
 }
 
 function SessionRow({ s, now, selecting, ticked, active, onTick, onSelect }: SessionRowProps) {
-  const time = <span className="session-time">{relativeTime(s.lastActivity, now)}</span>;
+  const time = <span className="session-time" title={relativeTime(s.lastActivity, now)}>{shortTime(s.lastActivity, now)}</span>;
+  const tag = <BackendTag backend={s.backend} />;
   if (selecting) {
     const blocked = !!s.live;
     return (
@@ -33,8 +43,8 @@ function SessionRow({ s, now, selecting, ticked, active, onTick, onSelect }: Ses
       >
         <input type="checkbox" checked={ticked} disabled={blocked} onChange={onTick} />
         <span className="session-title">{s.title}</span>
+        {tag}
         {time}
-        <LiveSlot status={s.live} here={s.liveHere} />
       </label>
     );
   }
@@ -51,9 +61,10 @@ function SessionRow({ s, now, selecting, ticked, active, onTick, onSelect }: Ses
         .filter(Boolean)
         .join(" · ")}
     >
-      <span className="session-title">{s.title}</span>
-      {time}
       <LiveSlot status={s.live} here={s.liveHere} />
+      <span className="session-title">{s.title}</span>
+      {tag}
+      {time}
     </button>
   );
 }
@@ -314,33 +325,19 @@ export function Navigator(props: Props) {
                       {open && (
                         <ul className="tree-children sessions">
                           {!list && <li className="muted tree-note">Loading…</li>}
-                          {list &&
-                            BACKENDS.map((backend) => {
-                              const items = list.filter((s) => (s.backend ?? "claude") === backend);
-                              if (!items.length) return null;
-                              return (
-                                <li key={backend} className="session-section">
-                                  <div className="section-head">
-                                    {BACKEND_LABEL[backend]} <span className="count">[{items.length}]</span>
-                                  </div>
-                                  <ul>
-                                    {items.map((s) => (
-                                      <li key={s.id}>
-                                        <SessionRow
-                                          s={s}
-                                          now={now}
-                                          selecting={selecting}
-                                          ticked={ticked.has(s.id)}
-                                          active={selected?.id === s.id}
-                                          onTick={() => tick(s.id, folder.path)}
-                                          onSelect={() => props.onSelect({ dir: folder.path, id: s.id, backend: s.backend })}
-                                        />
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </li>
-                              );
-                            })}
+                          {list?.map((s) => (
+                            <li key={s.id}>
+                              <SessionRow
+                                s={s}
+                                now={now}
+                                selecting={selecting}
+                                ticked={ticked.has(s.id)}
+                                active={selected?.id === s.id}
+                                onTick={() => tick(s.id, folder.path)}
+                                onSelect={() => props.onSelect({ dir: folder.path, id: s.id, backend: s.backend })}
+                              />
+                            </li>
+                          ))}
                         </ul>
                       )}
                     </li>
