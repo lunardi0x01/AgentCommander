@@ -11,7 +11,9 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { BackendId, ChatMessage, FolderChoice, FolderInfo, LiveStatus, SessionSummary, Tree } from "../shared/types.ts";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { sessionActivity, transcriptPaths } from "./activity.ts";
 import { loadConfig } from "./config.ts";
 import { liveSessions, type LiveSession } from "./live.ts";
@@ -56,8 +58,42 @@ function withUnlistedLive(sessions: SDKSessionInfo[], live: Map<string, LiveSess
   return [...sessions, ...extra];
 }
 
+// The SDK reads a session's folder from the start of its transcript, so a
+// first message with a big pasted image pushes it out of reach and the session
+// comes back without one (and would vanish from the list). Find it ourselves:
+// the live registry knows it, else the first transcript line that has a cwd.
+async function transcriptCwd(file: string): Promise<string | undefined> {
+  const lines = createInterface({ input: createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (!line.includes('"cwd":"')) continue;
+      try {
+        const cwd = JSON.parse(line).cwd;
+        if (typeof cwd === "string") return cwd;
+      } catch {}
+    }
+  } catch {}
+  finally {
+    lines.close();
+  }
+  return undefined;
+}
+
+async function withMissingCwd(sessions: SDKSessionInfo[], live: Map<string, LiveSession>): Promise<SDKSessionInfo[]> {
+  if (sessions.every((s) => s.cwd)) return sessions;
+  const paths = await transcriptPaths();
+  return Promise.all(
+    sessions.map(async (s) => {
+      if (s.cwd) return s;
+      const file = paths.get(s.sessionId);
+      const cwd = live.get(s.sessionId)?.cwd ?? (file ? await transcriptCwd(file) : undefined);
+      return cwd ? { ...s, cwd } : s;
+    }),
+  );
+}
+
 async function projectSessions(live: Map<string, LiveSession>): Promise<IndexedSession[]> {
-  const all = withUnlistedLive(await listSessions(), live);
+  const all = withUnlistedLive(await withMissingCwd(await listSessions(), live), live);
   const claude = await withActivity(all.filter((s) => isProjectFolder(s.cwd)));
   return [...claude, ...(await geminiSessions())];
 }
