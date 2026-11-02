@@ -1,0 +1,22 @@
+# systemd user service for Agent Commander.
+# Install: npm run install-service   (copies this to ~/.config/systemd/user/)
+# Logs:    journalctl --user -u agent-commander -f
+
+[Unit]
+Description=Agent Commander (web UI for Claude Code sessions)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/mnt/dev/projects/AgentCommander
+# mise shims: node and claude follow mise's versions without editing this file.
+Environment=PATH=%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_PATH=%h/.local/share/mise/installs/claude/latest/claude
+Environment=NODE_ENV=production
+ExecStart=%h/.local/share/mise/shims/node server/index.ts
+# "npm run restart" makes the server exit once no session is busy; systemd
+# then starts it again with the new code.
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

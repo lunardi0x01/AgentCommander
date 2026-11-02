@@ -1,0 +1,6 @@
+.project/
+{{#public}}
+.claude/
+{{/public}}
+__pycache__/
+*.pyc

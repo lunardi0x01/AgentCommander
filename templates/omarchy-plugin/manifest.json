@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "{{user}}.{{id}}",
+  "name": "{{name_json}}",
+  "version": "0.1.0",
+  "author": "{{author_json}}",
+  "license": "MIT",
+  "description": "{{description_json}}",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "bar_widget.qml"
+  },
+  "barWidget": {
+    "displayName": "{{name_json}}",
+    "description": "{{description_json}}",
+    "category": "Utilities",
+    "allowMultiple": false
+  }
+}

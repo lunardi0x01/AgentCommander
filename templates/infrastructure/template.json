@@ -1,0 +1,5 @@
+{
+  "name": "Infrastructure",
+  "description": "Notes, runbooks and tooling for a system you run (router, server, VMs, home lab). Docs first, with a rule for who changes live systems.",
+  "public": false
+}

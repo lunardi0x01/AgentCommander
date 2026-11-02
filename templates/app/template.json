@@ -1,0 +1,5 @@
+{
+  "name": "App or service",
+  "description": "A program with source and tests (Node, Python, Expo, ...). No code is generated; use the language's own tools for that.",
+  "public": false
+}

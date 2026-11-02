@@ -1,0 +1,5 @@
+{
+  "name": "WoW addon",
+  "description": "A World of Warcraft addon: .toc, Lua, and an install script that copies it into the game's AddOns folder.",
+  "public": true
+}

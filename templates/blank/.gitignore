@@ -1,0 +1,4 @@
+.project/
+{{#public}}
+.claude/
+{{/public}}

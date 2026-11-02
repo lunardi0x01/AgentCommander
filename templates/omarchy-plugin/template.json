@@ -1,0 +1,5 @@
+{
+  "name": "Omarchy plugin",
+  "description": "A bar widget or panel for the Omarchy shell (Quickshell/QML), with the security and naming rules from your other plugins.",
+  "public": true
+}

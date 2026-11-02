@@ -1,0 +1,8 @@
+## Interface: 120105
+## Title: {{name}}
+## Notes: {{description}}
+## Author: {{author}}
+## Version: 0.1.0
+## SavedVariables: {{pascal}}DB
+
+Core.lua
