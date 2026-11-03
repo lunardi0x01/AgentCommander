@@ -15,7 +15,7 @@ npm run typecheck
 ```
 
 From another machine, either tunnel the port
-(`ssh -L 4317:127.0.0.1:4317 omarchy-01`, then open http://127.0.0.1:4317) or
+(`ssh -L 4317:127.0.0.1:4317 <host>`, then open http://127.0.0.1:4317) or
 use the tailnet: the server stays on 127.0.0.1 and Tailscale proxies HTTPS to it.
 
 ```sh
