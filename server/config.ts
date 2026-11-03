@@ -21,13 +21,21 @@ export async function loadConfig(): Promise<Config> {
   if (cached) return cached;
   try {
     const raw = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new SyntaxError("not a JSON object");
     cached = {
       folders: Array.isArray(raw.folders) ? raw.folders.filter((f: unknown) => typeof f === "string") : [],
       settings: { ...DEFAULT_SETTINGS, ...(raw.settings && typeof raw.settings === "object" ? raw.settings : {}) },
       logins: Array.isArray(raw.logins) ? raw.logins.filter((l: unknown) => typeof l === "string") : [],
     };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      if (!(err instanceof SyntaxError)) throw err;
+      // A hand-edited or half-written file must not crash-loop the server.
+      const backup = `${CONFIG_FILE}.bad-${Date.now()}`;
+      await rename(CONFIG_FILE, backup).catch(() => {});
+      console.error(`!! ${CONFIG_FILE} is not valid JSON (${err.message}). Moved it to ${backup} and starting with defaults.`);
+    }
     cached = { folders: [], settings: { ...DEFAULT_SETTINGS }, logins: [] };
   }
   return cached;

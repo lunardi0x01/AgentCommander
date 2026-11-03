@@ -3,6 +3,7 @@
 // updates. Tool calls are named after Claude Code's tools where they match
 // (Bash, Edit, Write, Read…) so the UI's renderers apply.
 
+import { createHash } from "node:crypto";
 import type { Block, ChatMessage, ImageBlock, ToolBlock } from "../shared/types.ts";
 
 type Update = Record<string, unknown>;
@@ -66,6 +67,35 @@ function outputText(out: unknown): string {
 // id; the run itself is reported separately, so this one is noise.
 const NEVER_EXECUTED = "Tool call was approved but never executed.";
 
+// Images from ACP are served by URL, not inlined as data: URLs. Kept in a
+// byte-bounded LRU; a replay (session/load) re-registers them after a restart.
+export const GEMINI_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const imageCache = new Map<string, { mediaType: string; data: Buffer }>();
+let imageCacheBytes = 0;
+
+function rememberImage(mediaType: string, base64: string): string {
+  const data = Buffer.from(base64, "base64");
+  const key = createHash("sha256").update(data).digest("hex");
+  const old = imageCache.get(key);
+  if (old) {
+    imageCache.delete(key); // re-insert so the oldest entry is first
+    imageCacheBytes -= old.data.length;
+  }
+  imageCache.set(key, { mediaType, data });
+  imageCacheBytes += data.length;
+  while (imageCacheBytes > IMAGE_CACHE_MAX_BYTES && imageCache.size > 1) {
+    const first = imageCache.keys().next().value!;
+    imageCacheBytes -= imageCache.get(first)!.data.length;
+    imageCache.delete(first);
+  }
+  return key;
+}
+
+export function geminiImage(key: string): { mediaType: string; data: Buffer } | undefined {
+  return imageCache.get(key);
+}
+
 // A user message as ACP content blocks become chat blocks.
 export function userBlocks(content: Array<Record<string, unknown>>): Block[] {
   const blocks: Block[] = [];
@@ -74,8 +104,10 @@ export function userBlocks(content: Array<Record<string, unknown>>): Block[] {
       const file = c.text.match(/^<attached-file name="([^"\n]*)">\n/);
       blocks.push(file ? { type: "file", name: file[1], mediaType: "text/plain" } : { type: "text", text: c.text });
     } else if (c.type === "image" && typeof c.data === "string") {
-      const mediaType = String(c.mimeType ?? "image/png");
-      blocks.push({ type: "image", mediaType, url: `data:${mediaType};base64,${c.data}` } satisfies ImageBlock);
+      const mediaType = String(c.mimeType ?? "image/png").toLowerCase();
+      if (GEMINI_IMAGE_TYPES.includes(mediaType)) {
+        blocks.push({ type: "image", mediaType, url: `/api/gemini-images/${rememberImage(mediaType, c.data)}` } satisfies ImageBlock);
+      }
     } else if (c.type === "resource") {
       const r = asObject(c.resource);
       const name = String(r.uri ?? "file").split("/").pop() || "file";

@@ -12,6 +12,8 @@ type Status = "loading" | "saved" | "unsaved" | "saving" | "conflict" | "error";
 
 // Saves this long after the last keystroke.
 const AUTOSAVE_MS = 800;
+// A failed save retries after 2 s, 4 s, 8 s… up to this long.
+const RETRY_MAX_MS = 30_000;
 
 // One of a project's documents, edited in place and saved as you type.
 export function NotesPane({ dir, file, version }: Props) {
@@ -24,6 +26,7 @@ export function NotesPane({ dir, file, version }: Props) {
   textRef.current = text;
   const statusRef = useRef(status);
   statusRef.current = status;
+  const retry = useRef<{ timer?: ReturnType<typeof setTimeout>; n: number }>({ n: 0 });
 
   const load = async () => {
     try {
@@ -52,6 +55,16 @@ export function NotesPane({ dir, file, version }: Props) {
     [],
   );
 
+  // Closing or reloading the browser tab: unmount never runs, so save now.
+  useEffect(() => {
+    const flush = (e: PageTransitionEvent) => {
+      if (e.persisted) return; // going into the back/forward cache: the page lives on
+      if (statusRef.current === "unsaved") void api.saveNotes(dir, file, textRef.current, base.current, true).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [dir, file]);
+
   // Changed on disk (Claude, another device, our own save): follow it unless
   // there are unsaved edits here, which then conflict.
   useEffect(() => {
@@ -75,15 +88,24 @@ export function NotesPane({ dir, file, version }: Props) {
       base.current = saved.mtime;
       setStatus(textRef.current === sent ? "saved" : "unsaved");
       setError(null);
+      retry.current.n = 0;
     } catch (err) {
       const message = String((err as Error).message ?? err);
       if (message.includes("changed since")) setStatus("conflict");
       else {
         setStatus("error");
         setError(message);
+        // Keep trying with backoff; an edit or a newer save supersedes this.
+        clearTimeout(retry.current.timer);
+        const delay = Math.min(RETRY_MAX_MS, 2000 * 2 ** retry.current.n++);
+        retry.current.timer = setTimeout(() => {
+          if (statusRef.current === "error") void save();
+        }, delay);
       }
     }
   };
+
+  useEffect(() => () => clearTimeout(retry.current.timer), []);
 
   useEffect(() => {
     if (status !== "unsaved") return;
@@ -92,6 +114,7 @@ export function NotesPane({ dir, file, version }: Props) {
   }, [text, status]);
 
   const edit = (value: string) => {
+    clearTimeout(retry.current.timer);
     setText(value);
     if (statusRef.current !== "conflict") setStatus("unsaved");
   };

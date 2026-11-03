@@ -45,6 +45,8 @@ interface Props {
   tabs?: React.ReactNode; // Chat | Terminal switch, when the terminal is available
 }
 
+const WINDOW = 200;
+
 type Load = { state: "idle" } | { state: "loading" } | { state: "error"; error: string } | { state: "ready"; messages: ChatMessage[] };
 
 export function ChatView(props: Props) {
@@ -56,6 +58,8 @@ export function ChatView(props: Props) {
   // Sent messages shown until the transcript has them.
   const [pending, setPending] = useState<Array<{ text: string; files: string[] }>>([]);
   const [readAloud, setReadAloud] = useState(autoRead.get);
+  // How many of the latest messages are mounted; "Show earlier" raises it.
+  const [shown, setShown] = useState(WINDOW);
   const scroller = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   // Follow new messages only while the reader is at the bottom.
@@ -70,6 +74,7 @@ export function ChatView(props: Props) {
     stopSpeaking(); // a reply from the session we're leaving
     sawBusy.current = false;
     messagesRef.current = [];
+    setShown(WINDOW);
     stickToBottom.current = true;
     if (!selection) return setLoad({ state: "idle" });
     let cancelled = false;
@@ -89,7 +94,8 @@ export function ChatView(props: Props) {
 
   // Live updates: fetch only from the last message we have (it may have grown).
   useEffect(() => {
-    if (!selection || version === 0) return;
+    // Wait for the first load: a late first response would overwrite newer messages.
+    if (!selection || version === 0 || load.state !== "ready") return;
     let cancelled = false;
     const have = messagesRef.current;
     const from = Math.max(0, have.length - 1);
@@ -108,15 +114,20 @@ export function ChatView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [version]);
+  }, [version, selection?.id, selection?.dir, load.state]);
 
   const messages = load.state === "ready" ? load.messages : [];
 
   // Assistant blocks already loaded, so finished draft blocks can be dropped.
+  // Only the latest messages can match a live turn's draft.
   const savedUuids = useMemo(
-    () => new Set(messages.flatMap((m) => m.blocks.map((b) => ("uuid" in b ? b.uuid : undefined)).filter((u) => u !== undefined))),
+    () =>
+      new Set(
+        messages.slice(-100).flatMap((m) => m.blocks.map((b) => ("uuid" in b ? b.uuid : undefined)).filter((u) => u !== undefined)),
+      ),
     [messages],
   );
+  const hidden = Math.max(0, messages.length - shown);
 
   // Drop pending messages once the transcript has them: as a user message,
   // or as a command notice for slash commands.
@@ -284,7 +295,12 @@ export function ChatView(props: Props) {
                 : "This session has no messages."}
             </div>
           )}
-          {messages.map((m) => (
+          {hidden > 0 && (
+            <button className="secondary-button show-earlier" onClick={() => setShown((n) => n + WINDOW)}>
+              Show earlier ({hidden} more)
+            </button>
+          )}
+          {(hidden ? messages.slice(hidden) : messages).map((m) => (
             <Message key={m.id} message={m} hideTools={props.hideTools} backend={props.backend} />
           ))}
           {pending.map((p, i) => (

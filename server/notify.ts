@@ -51,12 +51,14 @@ async function notify(id: string, kind: "done" | "needs-you", run: RunState): Pr
 
 export function startNotifications(): void {
   onRunChange((id, run) => {
+    if (run?.status === "error") setTimeout(() => turns.get(id)?.status === "error" && turns.delete(id), 60_000).unref();
     if (!run) return void turns.delete(id);
     const prev = turns.get(id);
     if (prev?.status === run.status) return; // draft updates arrive constantly
     const now = Date.now();
     const wasActive = !!prev && ACTIVE.includes(prev.status);
     turns.set(id, { status: run.status, since: ACTIVE.includes(run.status) && !wasActive ? now : (prev?.since ?? now) });
+    // An errored run never emits null; its "since" is only needed for this check.
 
     if (run.status === "waiting") {
       getSettings().then((s) => void (s.notifyNeedsYou && notify(id, "needs-you", run))).catch(() => {});

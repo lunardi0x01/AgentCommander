@@ -7,7 +7,17 @@ import remarkGfm from "remark-gfm";
 // those against this server's own address, so show them as plain code.
 const hasScheme = /^([a-z][a-z0-9+.-]*:|#|\/\/)/i;
 
+// Only our own images and inline data: images load; a remote URL would let a
+// hostile reply leak data by making the browser fetch it.
+const localImage = /^(\/(?![\/\\])|data:image\/)[^\x00-\x1f]*$/i;
+
 const components: Components = {
+  img: ({ node: _node, src, alt }) =>
+    typeof src === "string" && localImage.test(src) ? (
+      <img src={src} alt={alt ?? ""} />
+    ) : (
+      <code title={typeof src === "string" ? src : undefined}>{alt || src || "image"}</code>
+    ),
   a: ({ node: _node, href, children, ...props }) =>
     !href || !hasScheme.test(href) ? (
       <code title={href || undefined}>{children}</code>

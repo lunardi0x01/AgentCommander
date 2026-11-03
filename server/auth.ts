@@ -66,9 +66,21 @@ function sameSite(req: http.IncomingMessage): boolean {
   return req.method === "DELETE" || (req.headers["content-type"] ?? "").startsWith("application/json");
 }
 
+// Fetch Metadata, set by browsers and not forgeable by page scripts: a request
+// another site caused (cross-site, same-site sibling) is refused for every
+// method, closing side-effecting GETs. Clients that send none are not browsers.
+function crossSite(req: http.IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (typeof site !== "string" || site === "same-origin" || site === "none") return false;
+  // Following a link to the app from another page is fine (it only loads the
+  // static shell); the API still needs the request to come from us.
+  const page = req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate" && req.headers["sec-fetch-dest"] === "document";
+  return !(page && !(req.url ?? "").startsWith("/api/"));
+}
+
 // The reason a request is refused, or null when it may proceed.
 export async function check(req: http.IncomingMessage): Promise<{ status: number; message: string } | null> {
-  if (!sameSite(req)) return { status: 403, message: "Forbidden" };
+  if (crossSite(req) || !sameSite(req)) return { status: 403, message: "Forbidden" };
 
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
   if (tokenMatches(bearer)) {
@@ -81,6 +93,9 @@ export async function check(req: http.IncomingMessage): Promise<{ status: number
   if (!isLoopback(req.socket.remoteAddress)) return { status: 401, message: "Unauthorized" };
   const login = req.headers["tailscale-user-login"];
   if (typeof login === "string" && login) {
+    // Through the proxy the caller is a browser (always sends Fetch Metadata over
+    // https); a script on the tailnet has to use the token instead.
+    if (!req.headers["sec-fetch-site"]) return { status: 401, message: "Unauthorized: scripts need the token" };
     if (!(await loadConfig()).logins.includes(login)) return { status: 403, message: `${login} isn't allowed to use Agent Commander` };
     authOf.set(req, { via: "tailscale", login });
     return null;

@@ -96,6 +96,9 @@ export class AcpConnection {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    try {
+      this.child.stdin?.end(); // let it exit cleanly first
+    } catch {}
     this.child.kill();
   }
 

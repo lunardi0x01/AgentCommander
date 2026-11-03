@@ -41,6 +41,8 @@ async function windowExists(id: string): Promise<boolean> {
   return names.split("\n").includes(windowName(id));
 }
 
+export const hasHandoffWindow = windowExists;
+
 const pane = (id: string) => tmux("capture-pane", "-p", "-t", target(id)).catch(() => "");
 
 // The shell script run in the window. It removes variables that would make

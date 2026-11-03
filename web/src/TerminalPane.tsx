@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { uuid } from "./format.ts";
 
 // xterm's colours follow the app's theme tokens (and change with the toggle).
 function themeColours() {
@@ -48,13 +49,34 @@ export function TerminalPane({ dir, active }: Props) {
     setEnded(false);
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/api/terminal?dir=${encodeURIComponent(dir)}&cols=${t.cols}&rows=${t.rows}`);
-    const send = (msg: object) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
-    ws.onmessage = (e) => t.write(String(e.data));
-    ws.onclose = () => {
-      t.write("\r\n\x1b[2m[disconnected]\x1b[0m\r\n");
-      setEnded(true);
+    // The same id on every reconnect reattaches to the same shell.
+    const sid = uuid();
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry: number | undefined;
+    let attempts = 0;
+    const send = (msg: object) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
+    const connect = () => {
+      const sock = new WebSocket(`${proto}://${location.host}/api/terminal?dir=${encodeURIComponent(dir)}&cols=${t.cols}&rows=${t.rows}&sid=${sid}`);
+      ws = sock;
+      sock.onopen = () => {
+        // The server replays recent output on reattach, so start from blank.
+        if (attempts > 0) t.reset();
+        attempts = 0;
+      };
+      sock.onmessage = (e) => t.write(String(e.data));
+      sock.onclose = (e) => {
+        if (closed || ws !== sock) return;
+        if (e.code !== 4000 && attempts < 40) {
+          attempts++;
+          retry = window.setTimeout(connect, Math.min(1000 * attempts, 5000));
+          return;
+        }
+        t.write("\r\n\x1b[2m[disconnected]\x1b[0m\r\n");
+        setEnded(true);
+      };
     };
+    connect();
     t.onData((d) => send({ t: "i", d }));
     t.onResize(({ cols, rows }) => send({ t: "r", c: cols, r: rows }));
 
@@ -70,7 +92,10 @@ export function TerminalPane({ dir, active }: Props) {
     return () => {
       observer.disconnect();
       themeObserver.disconnect();
-      ws.close();
+      closed = true;
+      clearTimeout(retry);
+      send({ t: "x" });
+      ws?.close();
       t.dispose();
     };
   }, [dir, run]);

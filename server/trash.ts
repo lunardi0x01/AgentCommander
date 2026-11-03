@@ -77,9 +77,21 @@ export async function trashSessions(items: Array<{ id: string; dir: string }>): 
         lastActivity: times.get(id) ?? info.lastModified,
         deletedAt: Date.now(),
       };
-      await writeFile(path.join(target, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
-      await move(transcript, path.join(target, path.basename(transcript)));
-      if (existsSync(companion(transcript))) await move(companion(transcript), path.join(target, id));
+      // meta.json goes last: an entry only exists once everything is moved.
+      const moved: Array<[string, string]> = [];
+      try {
+        await move(transcript, path.join(target, path.basename(transcript)));
+        moved.push([transcript, path.join(target, path.basename(transcript))]);
+        if (existsSync(companion(transcript))) {
+          await move(companion(transcript), path.join(target, id));
+          moved.push([companion(transcript), path.join(target, id)]);
+        }
+        await writeFile(path.join(target, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
+      } catch (err) {
+        for (const [from, to] of moved.reverse()) await move(to, from).catch(() => {});
+        await rm(target, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
       result.done.push(id);
     } catch (err) {
       result.failed.push({ id, error: err instanceof Error ? err.message : String(err) });

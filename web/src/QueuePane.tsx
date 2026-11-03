@@ -111,6 +111,39 @@ interface AddProps {
 function AddTasks({ dir, onError }: AddProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // Tasks from "Preview tasks", editable before they are added.
+  const [preview, setPreview] = useState<QueueTask[] | null>(null);
+
+  const showPreview = async () => {
+    setBusy(true);
+    onError(null);
+    try {
+      const { tasks } = await api.splitTasks(dir, text.trim());
+      setPreview(tasks);
+    } catch (err) {
+      onError(String((err as Error).message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addPreview = async () => {
+    if (!preview?.length) return;
+    setBusy(true);
+    onError(null);
+    try {
+      await api.addTasks(dir, preview);
+      setPreview(null);
+      setText("");
+    } catch (err) {
+      onError(String((err as Error).message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const change = (i: number, patch: Partial<QueueTask>) =>
+    setPreview((prev) => prev && prev.map((t, j) => (j === i ? { ...t, ...patch } : t)));
 
   const add = async () => {
     setBusy(true);
@@ -125,6 +158,36 @@ function AddTasks({ dir, onError }: AddProps) {
     }
   };
 
+  if (preview)
+    return (
+      <section className="queue-add">
+        {preview.map((t, i) => (
+          <div key={i} className="task-edit">
+            <div className="queue-item-head">
+              <input className="task-title-input" value={t.title} onChange={(e) => change(i, { title: e.target.value })} />
+              <button className="text-button" title="Remove this task" onClick={() => setPreview((prev) => prev && prev.filter((_, j) => j !== i))}>
+                ✕
+              </button>
+            </div>
+            <textarea className="task-prompt-input" rows={3} value={t.prompt} onChange={(e) => change(i, { prompt: e.target.value })} />
+          </div>
+        ))}
+        {!preview.length && <div className="empty">No tasks left.</div>}
+        <div className="queue-add-actions">
+          <button
+            className="primary-button"
+            disabled={busy || !preview.length || preview.some((t) => !t.title.trim() || !t.prompt.trim())}
+            onClick={addPreview}
+          >
+            {busy ? "Adding…" : `Add ${preview.length} to queue`}
+          </button>
+          <button className="text-button" disabled={busy} onClick={() => setPreview(null)}>
+            Back
+          </button>
+        </div>
+      </section>
+    );
+
   return (
     <section className="queue-add">
       <textarea
@@ -136,7 +199,10 @@ function AddTasks({ dir, onError }: AddProps) {
       />
       <div className="queue-add-actions">
         <button className="primary-button" disabled={!text.trim() || busy} onClick={add}>
-          {busy ? "Adding…" : "Add to queue"}
+          {busy ? "Working…" : "Add to queue"}
+        </button>
+        <button className="secondary-button" disabled={!text.trim() || busy} onClick={showPreview} title="Split it into tasks now, and edit them before adding">
+          Preview tasks
         </button>
       </div>
     </section>

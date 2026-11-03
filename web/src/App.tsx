@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { uuid } from "./format.ts";
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -117,6 +118,8 @@ export function App() {
     () => new Set([...(savedExpanded() ?? []), ...(selected ? [selected.dir] : [])]),
   );
   const [error, setError] = useState<string | null>(null);
+  // The live event stream is down (it reconnects by itself).
+  const [connLost, setConnLost] = useState(false);
   const [panel, setPanel] = useState<Panel>("tree");
   const [notice, setNotice] = useState<Notice | null>(null);
   // State of sessions Agent Commander is running, by session id.
@@ -235,14 +238,18 @@ export function App() {
     const connect = () => {
       events = new EventSource("/api/events");
       let opened = false;
+      events.onerror = () => setConnLost(true);
       events.onopen = () => {
+        setConnLost(false);
         if (opened) catchUp();
         opened = true;
       };
       events.onmessage = (e) => {
         const event: ServerEvent = JSON.parse(e.data);
         if (event.type === "list") refreshRef.current();
-        else if (event.type === "run") setRuns((prev) => ({ ...prev, [event.id]: event.run }));
+        // Only the open session's run is shown, and selecting one fetches it,
+        // so other sessions' (draft-heavy) events don't re-render the tree.
+        else if (event.type === "run") event.id === selectedRef.current?.id && setRuns((prev) => ({ ...prev, [event.id]: event.run }));
         else if (event.type === "queue") loadQueue();
         else if (event.type === "notes") setNotesVersion((prev) => ({ ...prev, [event.dir]: (prev[event.dir] ?? 0) + 1 }));
         else if (event.id === selectedRef.current?.id) setTranscriptVersion((v) => v + 1);
@@ -424,6 +431,11 @@ export function App() {
       className={`app show-${mobileView}${navHidden ? " nav-hidden" : ""}${showSide ? " with-side" : ""}${resizing ? " resizing" : ""}`}
       style={{ "--nav-width": `${navWidth}px`, "--side-width": `${sideWidth}px` } as React.CSSProperties}
     >
+      {connLost && (
+        <div className="conn-lost" role="status">
+          Connection lost: reconnecting…
+        </div>
+      )}
       <Navigator
         onHide={toggleNav}
         machine={machine}
@@ -436,7 +448,7 @@ export function App() {
         onPanel={showPanel}
         onToggle={toggle}
         onSelect={select}
-        onNewSession={(dir, agent) => select({ dir, id: crypto.randomUUID(), isNew: true, backend: agent })}
+        onNewSession={(dir, agent) => select({ dir, id: uuid(), isNew: true, backend: agent })}
         view={view}
         onView={openView}
         onSide={openSide}
@@ -499,7 +511,12 @@ export function App() {
           await api.closeSession(selected!.id);
           refresh();
         }}
-        onAnswer={(toolUseId, allow, mode, answers) => api.answerPermission(selected!.id, toolUseId, allow, mode, answers)}
+        onAnswer={async (toolUseId, allow, mode, answers) => {
+          const id = selected!.id;
+          await api.answerPermission(id, toolUseId, allow, mode, answers);
+          // Plan approved: the server left plan mode, so drop the stale "plan" pick or the next send re-applies it.
+          if (allow && mode) setChosen((prev) => ({ ...prev, [id]: { ...prev[id], mode } }));
+        }}
         onRenamed={renamed}
         onDelete={deleteSelected}
         onBack={() => setMobileView("nav")}

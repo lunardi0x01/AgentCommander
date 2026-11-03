@@ -60,11 +60,11 @@ export function transcribe(audio: Buffer): Promise<string> {
     try {
       const wav = path.join(dir, "speech.wav");
       // Voxtype wants 16 kHz mono WAV.
-      await run("ffmpeg", ["-loglevel", "error", "-y", "-i", "pipe:0", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], audio).catch(
+      await run("ffmpeg", ["-loglevel", "error", "-y", "-protocol_whitelist", "pipe", "-i", "pipe:0", "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], audio).catch(
         () => Promise.reject(new BadAudio("Couldn't read that recording")),
       );
       // On silence whisper makes words up ("www.youtube.com"), so don't ask it.
-      const { err } = await run("ffmpeg", ["-i", wav, "-af", "volumedetect", "-f", "null", "-"]);
+      const { err } = await run("ffmpeg", ["-protocol_whitelist", "file", "-i", wav, "-af", "volumedetect", "-f", "null", "-"]);
       const loudest = Number(err.match(/max_volume: (-?[\d.]+) dB/)?.[1] ?? 0);
       if (loudest < QUIET_DB) return "";
       const { out } = await run(VOXTYPE, ["-q", "transcribe", wav]);

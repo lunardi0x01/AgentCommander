@@ -12,7 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { BackendId, ChatMessage, FolderChoice, FolderInfo, LiveStatus, SessionSummary, Tree } from "../shared/types.ts";
 import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { sessionActivity, transcriptPaths } from "./activity.ts";
 import { loadConfig } from "./config.ts";
@@ -121,22 +121,38 @@ interface SessionIndex {
 }
 
 const INDEX_MAX_AGE_MS = 10_000;
-let index: { promise: Promise<SessionIndex>; at: number } | null = null;
+// Appends to a transcript only dirty the index; it is rebuilt at most this often then.
+const DIRTY_MIN_AGE_MS = 3_000;
+let index: { promise: Promise<SessionIndex>; at: number; dirty?: boolean; liveStale?: boolean } | null = null;
+
+async function buildLive(): Promise<Map<string, LiveSession>> {
+  const live = await liveSessions();
+  // Our own runs know their status best (e.g. waiting for a permission answer).
+  for (const [id, status] of runStatuses()) {
+    const entry = live.get(id);
+    if (entry) Object.assign(entry, { status, here: true });
+    // Gemini runs aren't in Claude Code's registry; ours are all there is.
+    else if (isGeminiSession(id)) live.set(id, { status, here: true });
+  }
+  return live;
+}
 
 function sessionIndex(): Promise<SessionIndex> {
-  if (!index || Date.now() - index.at > INDEX_MAX_AGE_MS) {
+  const age = index ? Date.now() - index.at : 0;
+  if (!index || age > INDEX_MAX_AGE_MS || index.liveStale || (index.dirty && age > DIRTY_MIN_AGE_MS)) {
+    const previous = index?.liveStale && age <= INDEX_MAX_AGE_MS && !(index.dirty && age > DIRTY_MIN_AGE_MS) ? index.promise : null;
     const promise = (async () => {
-      const live = await liveSessions();
-      // Our own runs know their status best (e.g. waiting for a permission answer).
-      for (const [id, status] of runStatuses()) {
-        const entry = live.get(id);
-        if (entry) Object.assign(entry, { status, here: true });
-        // Gemini runs aren't in Claude Code's registry; ours are all there is.
-        else if (isGeminiSession(id)) live.set(id, { status, here: true });
+      const live = await buildLive();
+      // Only live status changed: keep the session list if it already knows every live session.
+      if (previous) {
+        const old = await previous.catch(() => null);
+        if (old && [...live.keys()].every((id) => old.live.has(id) || old.sessions.some((s) => s.sessionId === id))) {
+          return { live, sessions: old.sessions };
+        }
       }
       return { live, sessions: await projectSessions(live) };
     })();
-    index = { promise, at: Date.now() };
+    index = previous && index ? { promise, at: index.at, dirty: index.dirty } : { promise, at: Date.now() };
     promise.catch(() => {
       if (index?.promise === promise) index = null;
     });
@@ -153,6 +169,16 @@ export async function sessionLabel(id: string): Promise<{ title: string; dir: st
 
 export function invalidateSessions(): void {
   index = null;
+}
+
+// Only live status changed (a run started, stopped or is waiting).
+export function invalidateLive(): void {
+  if (index) index.liveStale = true;
+}
+
+// A transcript grew: its row is out of date, but not worth a rebuild per write.
+export function markSessionDirty(_id: string): void {
+  if (index) index.dirty = true;
 }
 
 // Every project folder that has sessions, plus any extra paths given.
@@ -240,10 +266,41 @@ export async function listFolderSessions(dir: string): Promise<SessionSummary[]>
   return folderSessions(await sessionIndex(), dir);
 }
 
+// The converted chat per transcript, keyed on mtime + size, so polls and
+// several open pages share one parse (incremental ?from= reads slice this).
+// In-flight parses are shared too. Bounded; oldest entries drop out.
+const chatCache = new Map<string, { key: string; chat: Promise<ChatMessage[]> }>();
+const CHAT_CACHE_MAX = 8;
+
+async function transcriptKey(id: string): Promise<{ file: string; key: string } | null> {
+  const file = (await transcriptPaths()).get(id);
+  const info = file ? await stat(file).catch(() => null) : null;
+  return file && info ? { file, key: `${info.mtimeMs}:${info.size}` } : null;
+}
+
+function remember<T>(cache: Map<string, { key: string; chat: Promise<T> }>, max: number, file: string, key: string, value: Promise<T>): Promise<T> {
+  cache.delete(file); // re-insert so the oldest entry is first
+  cache.set(file, { key, chat: value });
+  value.catch(() => {
+    if (cache.get(file)?.chat === value) cache.delete(file);
+  });
+  while (cache.size > max) cache.delete(cache.keys().next().value!);
+  return value;
+}
+
 export async function readSession(id: string, dir?: string): Promise<ChatMessage[]> {
   const running = runMessages(id);
   if (running) return running;
   if (isGeminiSession(id)) return readGeminiSession(id);
+  const t = await transcriptKey(id);
+  if (!t) return convertSession(id, dir);
+  const k = `${t.key}|${dir ?? ""}`;
+  const hit = chatCache.get(t.file);
+  if (hit?.key === k) return hit.chat;
+  return remember(chatCache, CHAT_CACHE_MAX, t.file, k, convertSession(id, dir));
+}
+
+async function convertSession(id: string, dir?: string): Promise<ChatMessage[]> {
   const [entries, commands] = await Promise.all([
     getSessionMessages(id, { ...(dir ? { dir } : {}), includeSystemMessages: true }),
     localCommands(id),
@@ -272,10 +329,20 @@ interface LocalCommandEntry {
 // Slash commands that run locally (/context, /model, /cost…) save their
 // output as system entries, whose content the SDK doesn't return. Read them
 // from the transcript.
+// Cached per transcript, keyed on mtime + size; bounded so old sessions drop out.
+const localCommandCache = new Map<string, { key: string; entries: LocalCommandEntry[] }>();
+const LOCAL_COMMAND_CACHE_MAX = 50;
+
 async function localCommands(id: string): Promise<LocalCommandEntry[]> {
-  const found: LocalCommandEntry[] = [];
   const file = (await transcriptPaths()).get(id);
-  if (!file) return found;
+  if (!file) return [];
+  const info = await stat(file).catch(() => null);
+  if (!info) return [];
+  const key = `${info.mtimeMs}:${info.size}`;
+  const hit = localCommandCache.get(file);
+  if (hit?.key === key) return hit.entries;
+
+  const found: LocalCommandEntry[] = [];
   for (const line of (await readFile(file, "utf8")).split("\n")) {
     if (!line.includes('"local_command"')) continue;
     try {
@@ -285,11 +352,31 @@ async function localCommands(id: string): Promise<LocalCommandEntry[]> {
       }
     } catch {}
   }
+  localCommandCache.delete(file); // re-insert so the oldest entry is first
+  localCommandCache.set(file, { key, entries: found });
+  while (localCommandCache.size > LOCAL_COMMAND_CACHE_MAX) {
+    localCommandCache.delete(localCommandCache.keys().next().value!);
+  }
   return found;
 }
 
+// Raw SDK entries (with image data) for image requests: a chat with many
+// screenshots would otherwise parse the file once per image. Few entries kept,
+// they are big.
+const imageCache = new Map<string, { key: string; chat: Promise<SessionMessage[]> }>();
+const IMAGE_CACHE_MAX = 3;
+
 export async function readImage(id: string, entryUuid: string, n: number, dir?: string) {
-  return findImage(await getSessionMessages(id, dir ? { dir } : undefined), entryUuid, n);
+  const load = () => getSessionMessages(id, dir ? { dir } : undefined);
+  const t = await transcriptKey(id);
+  let entries: Promise<SessionMessage[]>;
+  if (!t) entries = load();
+  else {
+    const k = `${t.key}|${dir ?? ""}`;
+    const hit = imageCache.get(t.file);
+    entries = hit?.key === k ? hit.chat : remember(imageCache, IMAGE_CACHE_MAX, t.file, k, load());
+  }
+  return findImage(await entries, entryUuid, n);
 }
 
 // Same as /rename in Claude Code: appends a custom-title entry to the transcript.

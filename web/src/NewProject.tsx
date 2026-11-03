@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { MachineInfo, NewProjectResult, TemplateInfo } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { FolderBrowser } from "./FolderBrowser.tsx";
-import { tildePath } from "./format.ts";
+import { tildePath, uuid } from "./format.ts";
 
 interface Props {
   machine: MachineInfo | null;
@@ -76,7 +76,7 @@ export function NewProject({ machine, onDone, onOpenSession }: Props) {
       setResult(created);
       setStep("done");
       if (setup && template.id !== "none") {
-        const id = crypto.randomUUID();
+        const id = uuid();
         try {
           await api.sendMessage(id, created.dir, setupPrompt(template.name, description, git), {}, true);
           onOpenSession(created.dir, id);

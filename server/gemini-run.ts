@@ -326,7 +326,7 @@ export class GeminiRun {
     this.clearIdle();
     this.conn?.close();
     this.hooks.ended(this.id);
-    this.hooks.state(this.id, null);
+    if (this.id) this.hooks.state(this.id, null);
   }
 
   private onExit(error?: string): void {

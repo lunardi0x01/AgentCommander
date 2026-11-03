@@ -12,7 +12,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueueItem, QueueState, QueueTask, SessionSettings } from "../shared/types.ts";
 import { CHILD_ENV, CLAUDE_PATH } from "./claude.ts";
 import { getSettings } from "./config.ts";
-import { lastRateLimit, onRateLimit, onRunChange, sendMessage } from "./runner.ts";
+import { closeRun, getRun, lastRateLimit, onRateLimit, onRunChange, sendMessage } from "./runner.ts";
 import { renameSession } from "./sessions.ts";
 import { getUsage, invalidateUsage, usageBlocked } from "./usage.ts";
 
@@ -49,12 +49,15 @@ let writes: Promise<unknown> = Promise.resolve();
 
 function change<T>(fn: (s: QueueState) => T): Promise<T> {
   const run = writes.then(async () => {
-    const s = await load();
+    const current = await load();
+    // Mutate a clone; it replaces the live state only once the write succeeded.
+    const s = structuredClone(current);
     const result = fn(s);
     await mkdir(DATA_DIR, { recursive: true });
     const tmp = `${QUEUE_FILE}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(s, null, 2) + "\n");
     await rename(tmp, QUEUE_FILE);
+    state = s;
     changeListener();
     return result;
   });
@@ -233,28 +236,28 @@ async function tick(): Promise<void> {
   if (s.items.some((i) => i.status === "running")) return;
   const next = s.items.find((i) => i.status === "queued");
   if (!next) {
-    if (s.waitingUntil) await change((st) => void delete st.waitingUntil);
+    if (state?.waitingUntil) await change((st) => void delete st.waitingUntil);
     return;
   }
 
   const until = await usageOutUntil();
   if (until) {
-    if (s.waitingUntil !== until) await change((st) => void (st.waitingUntil = until));
+    if (state?.waitingUntil !== until) await change((st) => void (st.waitingUntil = until));
     return wakeAt(until);
   }
-  if (s.waitingUntil) await change((st) => void delete st.waitingUntil);
+  if (state?.waitingUntil) await change((st) => void delete st.waitingUntil);
 
   if (next.split) {
     let tasks: QueueTask[];
     try {
       tasks = await splitTasks(next.dir, next.prompt);
     } catch (err) {
-      await change(() => void delete next.split); // run it as written instead
+      await change((st) => void delete st.items.find((i) => i.id === next.id)?.split); // run it as written instead
       console.error("Queue: splitting failed, running the item as one task:", err);
       return kick();
     }
     await change((st) => {
-      const i = st.items.indexOf(next);
+      const i = st.items.findIndex((x) => x.id === next.id);
       if (i < 0) return;
       st.items.splice(i, 1, ...tasks.map((t): QueueItem => ({ ...next, id: randomUUID(), title: t.title, prompt: t.prompt, split: undefined })));
     });
@@ -266,10 +269,12 @@ async function tick(): Promise<void> {
   // A retry (after hitting the limit) continues the session it started.
   const isNew = !next.sessionId;
   const sessionId = next.sessionId ?? randomUUID();
-  await change(() => {
-    next.status = "running";
-    next.sessionId = sessionId;
-    delete next.error;
+  await change((st) => {
+    const item = st.items.find((i) => i.id === next.id);
+    if (!item) return;
+    item.status = "running";
+    item.sessionId = sessionId;
+    delete item.error;
   });
   try {
     await sendMessage(sessionId, next.dir, next.prompt, runSettings, isNew);
@@ -294,15 +299,20 @@ async function usageOutUntil(): Promise<number | null> {
 }
 
 async function finishItem(item: QueueItem, status: QueueItem["status"], error?: string): Promise<void> {
-  await change(() => {
-    item.status = status;
-    if (error) item.error = error;
-    else delete item.error;
+  await change((st) => {
+    const live = st.items.find((i) => i.id === item.id);
+    if (!live) return;
+    live.status = status;
+    if (error) live.error = error;
+    else delete live.error;
   });
   // Name the session after its task (once it exists on disk).
   if (item.sessionId && (status === "done" || status === "waiting")) {
     renameSession(item.sessionId, item.dir, item.title).catch(() => {});
   }
+  // Done: the process has nothing left to do. Waiting keeps its run (it needs an answer).
+  // Not if the user already sent a follow-up while the write was pending.
+  if (item.sessionId && status === "done" && getRun(item.sessionId)?.status === "idle") closeRun(item.sessionId);
   kick();
 }
 
@@ -315,7 +325,7 @@ onRunChange((id, run) => {
     return;
   }
   if (run.status === "waiting" && item.status === "running") void finishItem(item, "waiting");
-  else if (run.status === "working" && item.status === "waiting") void change(() => void (item.status = "running"));
+  else if (run.status === "working" && item.status === "waiting") void change((st) => void (st.items.find((i) => i.id === item.id)!.status = "running"));
   else if (run.status === "idle" || run.status === "error") {
     if (run.rateLimited) {
       // Out of usage mid-task: back in line, to continue after the reset.

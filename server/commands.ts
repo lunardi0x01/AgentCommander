@@ -43,10 +43,11 @@ async function probe(dir: string): Promise<FolderInfo> {
     prompt: silent as AsyncIterable<never>,
     options: { cwd: dir, env: CHILD_ENV, pathToClaudeCodeExecutable: CLAUDE_PATH, persistSession: false },
   });
+  let timer: NodeJS.Timeout | undefined;
   try {
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Timed out listing commands")), PROBE_TIMEOUT_MS),
-    );
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Timed out listing commands")), PROBE_TIMEOUT_MS);
+    });
     const init = await Promise.race([q.initializationResult(), timeout]);
     const commands = init.commands
       .filter((c) => !c.name.startsWith("__")) // internal
@@ -63,6 +64,7 @@ async function probe(dir: string): Promise<FolderInfo> {
     }));
     return { commands, defaults: { permissionMode: mode, models } };
   } finally {
+    clearTimeout(timer);
     q.close();
   }
 }

@@ -43,14 +43,18 @@ async function probe(behaviors: boolean): Promise<UsageInfo> {
     prompt: silent as AsyncIterable<never>,
     options: { cwd: os.tmpdir(), env: CHILD_ENV, pathToClaudeCodeExecutable: CLAUDE_PATH, persistSession: false },
   });
+  let timer: NodeJS.Timeout | undefined;
   try {
     // Checked in case an SDK upgrade renames it.
     const ask = (q as Partial<typeof q>).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
     if (typeof ask !== "function") return unavailable();
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out reading usage")), PROBE_TIMEOUT_MS));
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Timed out reading usage")), PROBE_TIMEOUT_MS);
+    });
     const res = await Promise.race([ask.call(q, { skipBehaviors: !behaviors }), timeout]);
     return convert(res);
   } finally {
+    clearTimeout(timer);
     q.close();
   }
 }

@@ -126,6 +126,10 @@ export function Navigator(props: Props) {
   const [theme, toggleTheme] = useTheme();
   const { notice, onNotice: setNotice } = props;
   const [deletedCount, setDeletedCount] = useState<number | null>(null);
+  // Filters the loaded sessions of open folders by title or branch.
+  const [filter, setFilter] = useState("");
+  const needle = filter.trim().toLowerCase();
+  const matches = (s: SessionSummary) => !needle || s.title.toLowerCase().includes(needle) || !!s.gitBranch?.toLowerCase().includes(needle);
 
   // Select mode: tick sessions in the open folders, then delete them.
   const [selecting, setSelecting] = useState(false);
@@ -245,6 +249,15 @@ export function Navigator(props: Props) {
             </div>
           )}
 
+          <div className="nav-filter">
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter sessions by title or branch"
+              aria-label="Filter sessions"
+            />
+          </div>
           <div className="tree">
             {/* One computer for now: its actions are in the header's ⋯ menu. A rail of computers could go beside this list later. */}
             <ul className="tree-children top">
@@ -296,7 +309,8 @@ export function Navigator(props: Props) {
                     {open && (
                       <ul className="tree-children sessions">
                         {!list && <li className="muted tree-note">Loading…</li>}
-                        {list?.map((s) => (
+                        {list && needle && !list.some(matches) && <li className="muted tree-note">No match</li>}
+                        {list?.filter(matches).map((s) => (
                           <li key={s.id}>
                             <SessionRow
                               s={s}

@@ -70,7 +70,7 @@ export function SettingsView({ settings, folders, onSettings, onBack }: Props) {
           <span className="setting-name">Allow a terminal in the browser</span>
           <span className="setting-detail">
             A Terminal tab next to Chat: a real shell as you, in the project folder, over Tailscale. Anyone allowed in
-            (see Access) gets a shell on this computer. Desktop only. Off refuses new terminals.
+            (see Access) gets a shell on this computer. Desktop only. Off (the default) refuses new terminals.
           </span>
         </span>
       </label>

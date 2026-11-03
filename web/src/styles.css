@@ -20,6 +20,9 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --nav-width: 300px;
   /* Your messages vs Claude's */
+  --agent: light-dark(#2f6fb3, #6aa5e0);
+  --agent-bg: color-mix(in srgb, var(--agent) 9%, var(--bg));
+  --agent-border: color-mix(in srgb, var(--agent) 30%, var(--border));
   --user-bg: color-mix(in srgb, var(--accent) 13%, var(--bg));
   --user-border: color-mix(in srgb, var(--accent) 35%, var(--border));
   --warning: #d9a441;
@@ -574,6 +577,27 @@ code {
 .message.assistant {
   padding-left: 12px;
   border-left: 2px solid var(--border);
+}
+/* A subagent or other session reporting in: full width, cool tint, collapsed. */
+.message.agent .speaker-name {
+  color: var(--agent);
+}
+.agent-card {
+  border: 1px solid var(--agent-border);
+  background: var(--agent-bg);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.agent-card summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-card[open] summary {
+  margin-bottom: 6px;
 }
 .speaker {
   display: flex;
@@ -2228,4 +2252,35 @@ code {
   position: absolute;
   right: 16px;
   bottom: 16px;
+}
+
+/* Session filter above the tree, and the chat's "Show earlier" button. */
+.nav-filter {
+  padding: 6px 10px;
+}
+.nav-filter input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.show-earlier {
+  display: block;
+  margin: 8px auto;
+}
+.conn-lost {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 4px 12px;
+  border-radius: 0 0 6px 6px;
+  font-size: 12px;
+  background: var(--warning);
+  color: #1d1d20;
 }

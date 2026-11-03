@@ -11,8 +11,7 @@ import { open, readdir, stat } from "node:fs/promises";
 
 const PROJECTS_DIR = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects");
 
-// Session id -> transcript path. Rebuilt on every call; it's one readdir per project.
-export async function transcriptPaths(): Promise<Map<string, string>> {
+async function scanTranscriptPaths(): Promise<Map<string, string>> {
   const paths = new Map<string, string>();
   const projects = await readdir(PROJECTS_DIR, { withFileTypes: true }).catch(() => []);
   for (const project of projects) {
@@ -22,7 +21,35 @@ export async function transcriptPaths(): Promise<Map<string, string>> {
       if (file.endsWith(".jsonl")) paths.set(file.slice(0, -6), path.join(dir, file));
     }
   }
+  prune(new Set(paths.values()));
   return paths;
+}
+
+// Session id -> transcript path. Cached; the projects watcher (events.ts)
+// drops it on renames (files added, moved, removed), and the max age covers
+// missed events. Callers must not mutate the map.
+const PATHS_MAX_AGE_MS = 60_000;
+let pathsCache: { promise: Promise<Map<string, string>>; at: number } | null = null;
+
+export function transcriptPaths(): Promise<Map<string, string>> {
+  if (!pathsCache || Date.now() - pathsCache.at > PATHS_MAX_AGE_MS) {
+    const promise = scanTranscriptPaths();
+    pathsCache = { promise, at: Date.now() };
+    promise.catch(() => {
+      if (pathsCache?.promise === promise) pathsCache = null;
+    });
+  }
+  return pathsCache.promise;
+}
+
+export function invalidateTranscriptPaths(): void {
+  pathsCache = null;
+}
+
+// Whether a transcript file path (as seen by the watcher) is a known session's.
+export async function isKnownTranscript(file: string): Promise<boolean> {
+  const id = path.basename(file).slice(0, -6);
+  return (await transcriptPaths()).get(id) === path.join(PROJECTS_DIR, file);
 }
 
 // What the transcript's tail says about a session.
@@ -34,6 +61,11 @@ export interface Activity {
 
 // Cached per file, keyed on mtime + size so changed files are re-read.
 const cache = new Map<string, { key: string; activity: Activity }>();
+
+// Drops entries of transcripts that no longer exist.
+function prune(live: Set<string>): void {
+  for (const file of cache.keys()) if (!live.has(file)) cache.delete(file);
+}
 
 async function fileActivity(file: string): Promise<Activity> {
   const info = await stat(file);
@@ -48,11 +80,14 @@ async function fileActivity(file: string): Promise<Activity> {
 
 // Reads growing chunks from the end until a user/assistant entry and an
 // assistant entry with token usage and one that wrote the cache have turned up.
+// Upper bound for the tail read; whatever was found within it is returned.
+const MAX_TAIL_BYTES = 8 * 1024 * 1024;
+
 async function scanTail(file: string, size: number): Promise<Activity> {
   const handle = await open(file, "r");
   try {
     for (let chunk = 64 * 1024; ; chunk *= 8) {
-      const length = Math.min(chunk, size);
+      const length = Math.min(chunk, size, MAX_TAIL_BYTES);
       const buffer = Buffer.alloc(length);
       await handle.read(buffer, 0, length, size - length);
       const lines = buffer.toString("utf8").split("\n");
@@ -82,7 +117,7 @@ async function scanTail(file: string, size: number): Promise<Activity> {
           }
         } catch {}
       }
-      if (length === size || (activity.time !== null && activity.context !== null && activity.cacheTtlMs !== null)) return activity;
+      if (length === size || length === MAX_TAIL_BYTES || (activity.time !== null && activity.context !== null && activity.cacheTtlMs !== null)) return activity;
     }
   } finally {
     await handle.close();

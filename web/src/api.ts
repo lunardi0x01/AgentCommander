@@ -28,9 +28,10 @@ import type {
   Tree,
 } from "../../shared/types.ts";
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, keepalive = false): Promise<T> {
   const res = await fetch(path, {
     method,
+    keepalive,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -101,8 +102,13 @@ export const api = {
 
   noteFiles: (dir: string) => request<string[]>("GET", `/api/notes/files?dir=${q(dir)}`),
   notes: (dir: string, file: string) => request<NotesFile>("GET", `/api/notes?dir=${q(dir)}&file=${q(file)}`),
-  saveNotes: (dir: string, file: string, text: string, baseMtime: number) =>
-    request<NotesFile>("POST", "/api/notes", { dir, file, text, baseMtime }),
+  // keepalive lets the save outlive a closing page; browsers cap such bodies
+  // at ~64KB, so bigger ones go as a normal request.
+  saveNotes: (dir: string, file: string, text: string, baseMtime: number, keepalive = false) => {
+    const body = { dir, file, text, baseMtime };
+    const small = new Blob([JSON.stringify(body)]).size < 60_000;
+    return request<NotesFile>("POST", "/api/notes", body, keepalive && small);
+  },
 
   usage: (behaviors = false) => request<UsageInfo>("GET", `/api/usage${behaviors ? "?behaviors=1" : ""}`),
 

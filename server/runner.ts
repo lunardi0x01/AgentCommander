@@ -6,6 +6,7 @@
 // session. A run adds what the file doesn't have: the message being
 // streamed right now, permission requests waiting for an answer, and status.
 
+import { randomUUID } from "node:crypto";
 import {
   query,
   type PermissionResult,
@@ -106,6 +107,9 @@ class Run {
   private idleTimer: NodeJS.Timeout | null = null;
   private draftTimer: NodeJS.Timeout | null = null;
   private interrupted = false;
+  // Live background tasks (subagents, shells) of this process. A session that
+  // is idle while they run is not finished: a restart or the idle close would kill them.
+  backgroundTasks = 0;
   readonly id: string;
 
   // `isNew`: start a new session with this id instead of resuming one.
@@ -196,7 +200,8 @@ class Run {
   }
 
   async interrupt(): Promise<void> {
-    this.interrupted = true;
+    // Idle: no result will come to clear the flag, so it would linger.
+    if (this.state.status !== "idle" && this.state.status !== "error") this.interrupted = true;
     await this.query.interrupt();
   }
 
@@ -225,7 +230,14 @@ class Run {
   }
 
   private handle(message: SDKMessage): void {
-    if (message.type === "stream_event") return this.stream(message.event);
+    // Subagent partials (parent_tool_use_id set) must not enter the main draft.
+    if (message.type === "stream_event") return message.parent_tool_use_id ? undefined : this.stream(message.event);
+
+    // The full set of live background tasks, sent whenever it changes.
+    if (message.type === "system" && message.subtype === "background_tasks_changed") {
+      this.backgroundTasks = message.tasks.filter((t) => !t.ambient).length;
+      return;
+    }
 
     // The process reports its permission mode at start and when it changes.
     if (message.type === "system" && (message.subtype === "init" || message.subtype === "status")) {
@@ -268,8 +280,12 @@ class Run {
       const error = message.subtype === "success" || this.interrupted ? undefined : resultError(message);
       this.interrupted = false;
       this.update({ status: "idle", draft: [], error });
-      this.idleTimer = setTimeout(() => closeRun(this.id), IDLE_CLOSE_MS);
+      this.armIdle();
     }
+  }
+
+  private armIdle(): void {
+    this.idleTimer = setTimeout(() => (this.backgroundTasks > 0 ? this.armIdle() : closeRun(this.id)), IDLE_CLOSE_MS);
   }
 
   // Builds the draft of the assistant message being streamed.
@@ -318,7 +334,9 @@ class Run {
   private finish(error?: string): void {
     this.pending.clear();
     this.clearIdleTimer();
-    if (runs.get(this.id) === this) runs.delete(this.id);
+    // Superseded or closed (closeRun already said so): a successor may own the id now.
+    if (runs.get(this.id) !== this) return;
+    runs.delete(this.id);
     if (error) this.update({ status: "error", draft: [], error });
     else listener(this.id, null);
   }
@@ -346,6 +364,7 @@ function resultError(message: SDKMessage & { type: "result" }): string {
 // What runner.ts needs from a run, Claude's or Gemini's.
 interface SessionRun {
   state: RunState;
+  backgroundTasks?: number; // Claude runs only
   send(content: string | Array<Record<string, unknown>>): void;
   answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>): boolean;
   apply(settings: SessionSettings): Promise<void>;
@@ -404,8 +423,19 @@ export async function sendMessage(
   let run = runs.get(id);
   if (!run && backend === "gemini") {
     const created = geminiRun(isNew ? null : id, dir, settings);
-    // Without its id there's nothing to register it under; wait for agy.
-    if (isNew) id = await created.started();
+    if (isNew) {
+      // Its real id comes from agy; until then a temporary key lets Stop find it.
+      const temp = `starting-${randomUUID()}`;
+      runs.set(temp, created);
+      try {
+        id = await created.started();
+      } catch (err) {
+        if (runs.get(temp) === created) runs.delete(temp);
+        throw err;
+      }
+      if (runs.get(temp) !== created) throw new Error("Stopped before the session started");
+      runs.delete(temp);
+    }
     runs.set(id, (run = created));
   } else if (!run) {
     run = new Run(id, dir, settings, isNew);
@@ -439,6 +469,11 @@ export function answerPermission(
 export async function interrupt(id: string): Promise<boolean> {
   const run = runs.get(id);
   if (!run) return false;
+  // A Gemini session still starting has no turn to cancel: drop it.
+  if (run instanceof GeminiRun && run.state.status === "starting") {
+    closeRun(id);
+    return true;
+  }
   await run.interrupt();
   return true;
 }
@@ -448,15 +483,17 @@ export function closeRun(id: string): void {
   if (!run) return;
   runs.delete(id); // a message sent now starts a fresh run
   run.close();
+  if (!(run instanceof GeminiRun)) listener(id, null); // once; Gemini's close() says it itself
 }
 
 export function closeAllRuns(): void {
   for (const run of runs.values()) run.close();
 }
 
-// Runs in the middle of a turn (or waiting for a permission answer).
+// Runs in the middle of a turn (or waiting for a permission answer), or idle
+// with background tasks still running (a chat waiting on its subagents).
 export function busyRuns(): number {
-  return [...runs.values()].filter((r) => ["starting", "working", "waiting"].includes(r.state.status)).length;
+  return [...runs.values()].filter((r) => ["starting", "working", "waiting"].includes(r.state.status) || (r.backgroundTasks ?? 0) > 0).length;
 }
 
 // Exits once no run is busy, for a supervisor (systemd) to start the server

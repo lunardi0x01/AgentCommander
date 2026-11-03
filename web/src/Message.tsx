@@ -24,6 +24,24 @@ export const Message = memo(function Message({ message, hideTools, backend }: Pr
     );
   }
 
+  if (message.role === "agent") {
+    const text = message.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n");
+    const summary = text.split("\n").find((l) => l.trim()) ?? "Message";
+    return (
+      <div className="message agent">
+        <div className="speaker">
+          <span className="speaker-name">Subagent</span>
+          {message.from && <span className="speaker-time">{message.from.slice(0, 8)}</span>}
+          {message.timestamp && <span className="speaker-time">{new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+        </div>
+        <details className="agent-card">
+          <summary>{summary}</summary>
+          <Markdown text={text} />
+        </details>
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     return (
       <div className="message user">

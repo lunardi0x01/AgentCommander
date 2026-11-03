@@ -151,7 +151,9 @@ POST   /api/queue/clear                  drop finished tasks
 GET    /api/events                       server-sent events: {type:"session",id} | {type:"list"} | {type:"run",id,run} | {type:"queue"} | {type:"notes",dir}
 ```
 
-State-changing requests must be same-origin JSON, so other websites can't drive the API.
+State-changing requests must be same-origin JSON, and any request a browser marks
+`Sec-Fetch-Site: cross-site` or `same-site` is refused, so other websites can't drive the API.
+Through Tailscale a request without that header (a script) needs the token.
 
 ## Access
 

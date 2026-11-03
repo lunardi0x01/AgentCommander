@@ -122,11 +122,13 @@ export interface Attachment {
 
 // "notice" covers transcript entries that are not really chat:
 // slash commands, local command output, background task notifications.
+// "agent" is a message another session or a subagent sent in: not typed by the user.
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "notice";
+  role: "user" | "assistant" | "notice" | "agent";
   blocks: Block[];
   timestamp?: string;
+  from?: string; // "agent": the sending session or subagent
 }
 
 // A transcript, or its tail from message index `from`.
@@ -267,7 +269,7 @@ export interface AppSettings {
   notifyMinSeconds: number; // "finished" only for turns at least this long (quick replies stay quiet)
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { hideThinkingAndTools: false, sideOpenByDefault: true, queueMode: "acceptEdits", notifyDone: true, notifyNeedsYou: true, notifyMinSeconds: 20, terminalEnabled: true };
+export const DEFAULT_SETTINGS: AppSettings = { hideThinkingAndTools: false, sideOpenByDefault: true, queueMode: "acceptEdits", notifyDone: true, notifyNeedsYou: true, notifyMinSeconds: 20, terminalEnabled: false };
 
 // A project's NOTES.md. mtime 0: the file doesn't exist yet.
 export interface NotesFile {

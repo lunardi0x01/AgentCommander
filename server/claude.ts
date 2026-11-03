@@ -4,7 +4,17 @@ import { execFileSync } from "node:child_process";
 
 // The `claude` binary that's installed and logged in (from PATH, or
 // CLAUDE_PATH), so the SDK uses it instead of its bundled copy.
-export const CLAUDE_PATH = process.env.CLAUDE_PATH || execFileSync("sh", ["-c", "command -v claude"], { encoding: "utf8" }).trim();
+function findClaude(): string {
+  if (process.env.CLAUDE_PATH) return process.env.CLAUDE_PATH;
+  try {
+    const found = execFileSync("sh", ["-c", "command -v claude"], { encoding: "utf8" }).trim();
+    if (found) return found;
+  } catch {}
+  console.error("!! `claude` was not found on PATH. Install Claude Code, or set CLAUDE_PATH to the binary.");
+  process.exit(1);
+}
+
+export const CLAUDE_PATH = findClaude();
 
 // The CLI must use the claude.ai login: never pass API keys through, and drop
 // variables that would make it think it's nested inside another Claude Code.

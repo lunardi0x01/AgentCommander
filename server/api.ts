@@ -21,6 +21,7 @@ import {
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { geminiModels, isGeminiSession, sessionCwd } from "./gemini.ts";
 import { GEMINI_MODES } from "./gemini-run.ts";
+import { geminiImage, GEMINI_IMAGE_TYPES } from "./gemini-transcript.ts";
 import { addFolder, getSettings, loadConfig, removeFolder, updateSettings } from "./config.ts";
 import { BadDoc, listDocs, NotesConflict, readNotes, writeNotes } from "./notes.ts";
 import { BadAudio, dictationAvailable, MAX_AUDIO_BYTES, transcribe } from "./dictation.ts";
@@ -30,9 +31,9 @@ import { addTasks, clearFinished, getQueue, moveTask, removeTask, runNow, setPau
 import { getTree, listFolderChoices, listFolders, listFolderSessions, readImage, readSession, renameSession } from "./sessions.ts";
 import { deleteForever, listDeleted, restoreSessions, trashSessions } from "./trash.ts";
 import { accessInfo, rotateToken } from "./auth.ts";
-import { BrowseError, browse, makeFolder } from "./browse.ts";
+import { BrowseError, browse, makeFolder, resolveInRoot } from "./browse.ts";
 import { createProject, listTemplates } from "./projects.ts";
-import { handOff, HandoffError, killWindow } from "./handoff.ts";
+import { handOff, HandoffError, hasHandoffWindow, killWindow } from "./handoff.ts";
 import { handleEvents, notifyListChanged, watchNotes } from "./events.ts";
 
 interface Request {
@@ -67,7 +68,11 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
     method: "POST",
     pattern: /^\/api\/folders$/,
     handler: async ({ body }) => {
-      await addFolder(absolutePath(body.path));
+      // Only a folder inside the projects root, or one that already has sessions
+      // (the picker's list); not an arbitrary path on the disk.
+      const wanted = absolutePath(body.path);
+      const known = (await listFolderChoices()).some((c) => c.path === wanted);
+      await addFolder(known ? wanted : (await browsing(() => resolveInRoot(wanted))).dir);
       notifyListChanged(); // other open pages show the new folder
       void watchNotes();
       return { ok: true };
@@ -167,7 +172,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
     handler: async ({ url }) =>
       url.searchParams.get("backend") === "gemini"
         ? [{ name: "plan", description: "Plan before acting: writes a plan for you to approve", argumentHint: "<task>" }]
-        : listCommands(absolutePath(url.searchParams.get("dir"))),
+        : listCommands(await chosenFolder(url.searchParams.get("dir"))),
   },
   // The defaults in a folder (permission mode, models), for sessions not running.
   {
@@ -176,7 +181,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
     handler: async ({ url }) =>
       url.searchParams.get("backend") === "gemini"
         ? { permissionMode: "default", models: await geminiModels(), modes: GEMINI_MODES }
-        : folderDefaults(absolutePath(url.searchParams.get("dir"))),
+        : folderDefaults(await chosenFolder(url.searchParams.get("dir"))),
   },
 
   // Chatting: send a message (resuming the session), answer a permission
@@ -203,6 +208,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
       }
       let settings = sessionSettings(body);
       const isNew = body.new === true;
+      if (isNew) await chosenFolder(dir); // no new Claude sessions outside chosen folders
       const gemini = body.backend === "gemini" || (!isNew && isGeminiSession(id));
       if (gemini && !isRunning(id)) {
         // App defaults are Claude's; only a permission mode Gemini has carries over.
@@ -249,6 +255,8 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
       const dir = absolutePath(body.dir);
       const trust = body.trust === true;
       if (isGeminiSession(id)) throw new HttpError(409, "Remote Control is for Claude sessions only");
+      // Trusting only answers the question in a window that is already waiting.
+      if (trust && !(await hasHandoffWindow(id))) throw new HttpError(409, "No Remote Control window is waiting for a trust answer");
       if (!trust) {
         if (getRun(id) && ["starting", "working", "waiting"].includes(getRun(id)!.status)) {
           throw new HttpError(409, "It is in the middle of a turn. Interrupt it or wait for it to finish.");
@@ -593,7 +601,25 @@ async function handleImage(res: ServerResponse, url: URL, [id, entryUuid, n]: st
   const image = await readImage(id, entryUuid, Number(n), url.searchParams.get("dir") ?? undefined);
   if (!image) return void (await sendJson(res, 404, { error: "Image not found" }));
   // A transcript's images never change once written.
-  await sendBody(res, 200, { "content-type": image.mediaType, "cache-control": "private, max-age=31536000, immutable" }, image.data);
+  // findImage only passes real image types; the sandbox CSP and nosniff keep even a mislabelled file inert.
+  await sendBody(
+    res,
+    200,
+    { "content-type": image.mediaType, "content-security-policy": "sandbox", "cache-control": "private, max-age=31536000, immutable" },
+    image.data,
+  );
+}
+
+// /api/gemini-images/:sha256 — an image from a Gemini session's replay or run.
+async function handleGeminiImage(res: ServerResponse, key: string): Promise<void> {
+  const image = geminiImage(key);
+  if (!image || !GEMINI_IMAGE_TYPES.includes(image.mediaType)) return void (await sendJson(res, 404, { error: "Image not found" }));
+  await sendBody(
+    res,
+    200,
+    { "content-type": image.mediaType, "x-content-type-options": "nosniff", "cache-control": "private, max-age=31536000, immutable" },
+    image.data,
+  );
 }
 
 // POST /api/speech {text} -> audio/wav of the text, spoken by Piper.
@@ -612,6 +638,8 @@ async function handleSpeech(req: IncomingMessage, res: ServerResponse): Promise<
 export async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   const image = req.method === "GET" && url.pathname.match(IMAGE_ROUTE);
   if (image) return handleImage(res, url, image.slice(1));
+  const gemImage = req.method === "GET" && url.pathname.match(/^\/api\/gemini-images\/([0-9a-f]{64})$/);
+  if (gemImage) return handleGeminiImage(res, gemImage[1]);
   if (url.pathname === "/api/events" && req.method === "GET") return handleEvents(req, res);
   if (url.pathname === "/api/speech" && req.method === "POST") return handleSpeech(req, res);
   for (const route of routes) {

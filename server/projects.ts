@@ -179,7 +179,8 @@ export async function createProject(input: NewProject): Promise<NewProjectResult
 
     await mkdir(path.dirname(target), { recursive: true });
     // A folder that was already there might be a link elsewhere.
-    if (!(await realpath(path.dirname(target))).startsWith(dir)) throw new BrowseError(400, `${path.dirname(rel)} leads outside the folder`);
+    const realParent = await realpath(path.dirname(target));
+    if (realParent !== dir && !realParent.startsWith(dir + path.sep)) throw new BrowseError(400, `${path.dirname(rel)} leads outside the folder`);
 
     const source = path.join(template, file);
     try {

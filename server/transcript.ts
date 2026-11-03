@@ -49,7 +49,10 @@ export function findImage(entries: SessionMessage[], entryUuid: string, n: numbe
   const entry = entries.find((e) => e.uuid === entryUuid);
   const source = entry ? entryImages(entry)[n]?.source : undefined;
   if (source?.type !== "base64" || !source.data) return null;
-  return { mediaType: source.media_type ?? "image/png", data: Buffer.from(source.data, "base64") };
+  // No SVG or HTML: those would run script from our origin if opened directly.
+  const type = source.media_type ?? "image/png";
+  const mediaType = /^image\/(png|jpeg|gif|webp)$/.test(type) ? type : "application/octet-stream";
+  return { mediaType, data: Buffer.from(source.data, "base64") };
 }
 
 // `commandOutput` holds the text of local slash-command entries (system
@@ -108,7 +111,7 @@ export function toChatMessages(entries: SessionMessage[], imageUrl: ImageUrl, co
     }
 
     turn = null;
-    const message = userMessage(entry.uuid, blocks, image, timestamp);
+    const message = userMessage(entry.uuid, blocks, image, timestamp, (entry as { origin?: Origin }).origin);
     if (message) out.push(message);
   }
   return out;
@@ -151,7 +154,9 @@ function toolResult(b: RawBlock, image: ToImage): ToolResult {
   return { text, isError: b.is_error === true, truncated, images };
 }
 
-function userMessage(id: string, blocks: RawBlock[], image: ToImage, timestamp?: string): ChatMessage | null {
+function userMessage(id: string, blocks: RawBlock[], image: ToImage, timestamp?: string, origin?: Origin): ChatMessage | null {
+  const agent = agentMessage(id, blocks, timestamp, origin);
+  if (agent) return agent;
   const out: Block[] = [];
   let notice = false;
   for (const b of blocks) {
@@ -175,6 +180,35 @@ function userMessage(id: string, blocks: RawBlock[], image: ToImage, timestamp?:
   }
   if (out.length === 0) return null;
   return { id, role: notice ? "notice" : "user", blocks: out, timestamp };
+}
+
+// Messages that another session or a subagent sent into this one arrive as
+// user turns: "Another Claude session sent a message:\n<agent-message from="…">…".
+// Show them as their own kind so they don't look like the user's own words.
+const AGENT_MESSAGE = /<agent-message from="([^"]*)">([\s\S]*?)<\/agent-message>/;
+
+// Claude Code records who a user turn really came from in `origin`; "peer" is
+// another session or a subagent. The text format is the fallback for older
+// transcripts, which carry no origin.
+interface Origin {
+  kind?: string;
+  from?: string;
+  body?: string;
+}
+
+function agentMessage(id: string, blocks: RawBlock[], timestamp?: string, origin?: Origin): ChatMessage | null {
+  const text = blocks.flatMap((b) => (b.type === "text" && b.text ? [b.text] : [])).join("\n");
+  const peer = origin?.kind === "peer";
+  if (!peer && !text.trimStart().startsWith("Another Claude session sent a message")) return null;
+  const m = text.match(AGENT_MESSAGE);
+  if (!m && !peer) return null;
+  // The harness indents the report and prefixes a framing line; drop both.
+  const body = (m?.[2] ?? origin?.body ?? text)
+    .replace(/^\s*\[Subagent hand-back\][\s\S]*?The report follows:\n/, "")
+    .replace(/^ {2}/gm, "")
+    .trim();
+  if (!body) return null;
+  return { id, role: "agent", from: m?.[1] ?? origin?.from, blocks: [{ type: "text", text: body }], timestamp };
 }
 
 // Claude Code stores slash commands, `!` shell commands and background task
