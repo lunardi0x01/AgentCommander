@@ -5,9 +5,6 @@ server owns the sessions through the Claude Agent SDK and serves a React UI;
 the browser only talks to the server's HTTP API. It can also run Gemini
 sessions (Google Antigravity) through Antigravity's ACP server.
 
-The full reference (features, architecture, Claude Code/SDK findings, history)
-is in [docs/REFERENCE.md](docs/REFERENCE.md).
-
 ## Run
 
 ```sh
@@ -96,7 +93,7 @@ server/   Node server (runs .ts directly, no build step)
   transcript.ts  SDK transcript -> UI messages
   attachments.ts message attachments -> content blocks
   dictation.ts   speech to text with Voxtype (optional)
-  speech.ts      text to speech with Piper (optional, see docs/REFERENCE.md)
+  speech.ts      text to speech with Piper (optional, setup in the file header)
 shared/   types shared by server and UI
 web/      React + Vite UI
 ```

@@ -7,7 +7,8 @@ Description=Agent Commander (web UI for Claude Code sessions)
 After=network-online.target
 
 [Service]
-WorkingDirectory=/mnt/dev/projects/AgentCommander
+# @APP_DIR@ is filled in with the checkout path by `npm run install-service`.
+WorkingDirectory=@APP_DIR@
 # mise shims: node and claude follow mise's versions without editing this file.
 Environment=PATH=%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
 Environment=CLAUDE_PATH=%h/.local/share/mise/installs/claude/latest/claude
