@@ -78,6 +78,13 @@ function crossSite(req: http.IncomingMessage): boolean {
   return !(page && !(req.url ?? "").startsWith("/api/"));
 }
 
+// A WebSocket handshake from our own page: browsers always send Origin on one.
+function browserWebSocket(req: http.IncomingMessage): boolean {
+  if (req.headers.upgrade?.toLowerCase() !== "websocket") return false;
+  const origin = req.headers.origin;
+  return !!origin && URL.parse(origin)?.host === req.headers.host;
+}
+
 // The reason a request is refused, or null when it may proceed.
 export async function check(req: http.IncomingMessage): Promise<{ status: number; message: string } | null> {
   if (crossSite(req) || !sameSite(req)) return { status: 403, message: "Forbidden" };
@@ -95,7 +102,9 @@ export async function check(req: http.IncomingMessage): Promise<{ status: number
   if (typeof login === "string" && login) {
     // Through the proxy the caller is a browser (always sends Fetch Metadata over
     // https); a script on the tailnet has to use the token instead.
-    if (!req.headers["sec-fetch-site"]) return { status: 401, message: "Unauthorized: scripts need the token" };
+    // Chromium sends no Fetch Metadata on WebSocket handshakes, but every
+    // browser sends Origin on one; terminal.ts also requires it to match.
+    if (!req.headers["sec-fetch-site"] && !browserWebSocket(req)) return { status: 401, message: "Unauthorized: scripts need the token" };
     if (!(await loadConfig()).logins.includes(login)) return { status: 403, message: `${login} isn't allowed to use Agent Commander` };
     authOf.set(req, { via: "tailscale", login });
     return null;
