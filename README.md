@@ -23,6 +23,22 @@ tailscale serve --bg --https=10000 http://127.0.0.1:4317   # once; persists
 # open https://your-host.your-tailnet.ts.net:10000 on any device signed in to your tailnet
 ```
 
+## Install on an Omarchy machine
+
+```sh
+git clone <repo> && cd AgentCommander
+npm run install-app
+```
+
+One script (`deploy/install.sh`, safe to run again) that: installs Node, Claude
+Code and agy with mise if missing; downloads Antigravity's ACP server (for
+Gemini sessions) and checks its sha256; builds the UI; installs and starts the
+systemd user service (with linger, so it starts at boot); runs
+`tailscale serve` on port 10000; and creates an "Agent Commander" launcher
+(Super+Space) that opens the machine's Tailscale address as an app window. It
+can't sign you in: run `claude` (then `/login`) and `agy` once afterwards.
+`DRY_RUN=1 npm run install-app` shows the steps without doing them.
+
 ## Running as a service
 
 ```sh
