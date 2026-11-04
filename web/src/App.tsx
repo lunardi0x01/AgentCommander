@@ -511,9 +511,9 @@ export function App() {
           await api.closeSession(selected!.id);
           refresh();
         }}
-        onAnswer={async (toolUseId, allow, mode, answers) => {
+        onAnswer={async (toolUseId, allow, mode, answers, always) => {
           const id = selected!.id;
-          await api.answerPermission(id, toolUseId, allow, mode, answers);
+          await api.answerPermission(id, toolUseId, allow, mode, answers, always);
           // Plan approved: the server left plan mode, so drop the stale "plan" pick or the next send re-applies it.
           if (allow && mode) setChosen((prev) => ({ ...prev, [id]: { ...prev[id], mode } }));
         }}

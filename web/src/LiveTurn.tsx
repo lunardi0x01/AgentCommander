@@ -12,7 +12,7 @@ interface Props {
   hideTools?: boolean; // collapse thinking and tool calls (a setting)
   continues?: boolean; // the last saved message is the assistant's: no second header
   backend?: BackendId;
-  onAnswer: (toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>) => Promise<void>;
+  onAnswer: (toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean) => Promise<void>;
 }
 
 // What the transcript doesn't show yet: the reply being streamed, permission
@@ -105,11 +105,11 @@ function PermissionCard({ request, onAnswer }: { request: PermissionRequest; onA
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const answer = async (allow: boolean) => {
+  const answer = async (allow: boolean, always = false) => {
     setBusy(true);
     setError(null);
     try {
-      await onAnswer(request.toolUseId, allow);
+      await onAnswer(request.toolUseId, allow, undefined, undefined, always);
     } catch (err) {
       setError(String((err as Error).message ?? err));
       setBusy(false);
@@ -132,6 +132,11 @@ function PermissionCard({ request, onAnswer }: { request: PermissionRequest; onA
         <button className="primary-button" disabled={busy} onClick={() => answer(true)}>
           Allow
         </button>
+        {request.alwaysLabel && (
+          <button className="secondary-button" disabled={busy} title={`Allow ${request.alwaysLabel} without asking again, for the rest of this session`} onClick={() => answer(true, true)}>
+            Always allow
+          </button>
+        )}
         <button className="secondary-button" disabled={busy} onClick={() => answer(false)}>
           Deny
         </button>

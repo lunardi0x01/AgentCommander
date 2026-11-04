@@ -302,7 +302,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler; maxBody
       if (typeof body.allow !== "boolean") throw new HttpError(400, "Expected allow: boolean");
       const mode = body.mode === undefined ? undefined : permissionMode(body.mode);
       const answers = body.answers === undefined ? undefined : stringMap(body.answers);
-      if (!answerPermission(id, toolUseId, body.allow, mode, answers)) throw new HttpError(404, "No such permission request");
+      if (!answerPermission(id, toolUseId, body.allow, mode, answers, body.always === true)) throw new HttpError(404, "No such permission request");
       return { ok: true };
     },
   },

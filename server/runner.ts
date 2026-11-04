@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import {
   query,
   type PermissionResult,
+  type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKPartialAssistantMessage,
@@ -94,8 +95,27 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+// Tools whose permission is never offered as "always": they change files, or
+// have their own card. Those keep needing a deliberate click.
+const NEVER_ALWAYS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "ExitPlanMode", "AskUserQuestion"]);
+
+// The SDK suggests rules that would stop it asking again (e.g. `Bash(git status:*)`).
+// Keep only plain allow-rules, scoped to this session; never a mode change or directory grant.
+function sessionAllowRules(toolName: string, suggestions?: PermissionUpdate[]): { updates: PermissionUpdate[]; label: string } | null {
+  if (NEVER_ALWAYS.has(toolName)) return null;
+  const updates: PermissionUpdate[] = [];
+  const labels: string[] = [];
+  for (const s of suggestions ?? []) {
+    if (s.type !== "addRules" || s.behavior !== "allow") continue;
+    updates.push({ ...s, destination: "session" });
+    labels.push(...s.rules.map((r) => (r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName)));
+  }
+  return updates.length ? { updates, label: labels.join(", ") } : null;
+}
+
 interface PendingPermission {
   request: PermissionRequest;
+  always?: PermissionUpdate[]; // the rules "Always allow" adds, for this session only
   resolve: (result: PermissionResult) => void;
 }
 
@@ -141,7 +161,9 @@ class Run {
               description: options.description,
               reason: options.decisionReason,
             };
-            this.pending.set(request.toolUseId, { request, resolve });
+            const always = sessionAllowRules(toolName, options.suggestions);
+            if (always) request.alwaysLabel = always.label;
+            this.pending.set(request.toolUseId, { request, resolve, always: always?.updates });
             options.signal.addEventListener("abort", () => this.settle(request.toolUseId, null));
             this.update({ status: "waiting" });
           }),
@@ -159,7 +181,7 @@ class Run {
   // `mode` switches permission mode along with allowing, e.g. when a plan
   // is approved ("Approve, auto-accept edits"). `answers` are the user's
   // answers to an AskUserQuestion call (question text -> chosen label(s)).
-  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>): boolean {
+  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean): boolean {
     const entry = this.pending.get(toolUseId);
     if (!entry) return false;
     const tool = entry.request.toolName;
@@ -175,7 +197,9 @@ class Run {
         ? {
             behavior: "allow",
             updatedInput: answers ? { ...entry.request.input, answers } : entry.request.input,
-            ...(mode ? { updatedPermissions: [{ type: "setMode", mode, destination: "session" }] } : {}),
+            ...(mode || (always && entry.always)
+              ? { updatedPermissions: [...(mode ? [{ type: "setMode" as const, mode, destination: "session" as const }] : []), ...(always ? (entry.always ?? []) : [])] }
+              : {}),
           }
         : { behavior: "deny", message: deniedMessage },
     );
@@ -366,7 +390,7 @@ interface SessionRun {
   state: RunState;
   backgroundTasks?: number; // Claude runs only
   send(content: string | Array<Record<string, unknown>>): void;
-  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>): boolean;
+  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean): boolean;
   apply(settings: SessionSettings): Promise<void>;
   interrupt(): Promise<void>;
   close(): void;
@@ -462,8 +486,9 @@ export function answerPermission(
   allow: boolean,
   mode?: PermissionMode,
   answers?: Record<string, string>,
+  always?: boolean,
 ): boolean {
-  return runs.get(id)?.answer(toolUseId, allow, mode, answers) ?? false;
+  return runs.get(id)?.answer(toolUseId, allow, mode, answers, always) ?? false;
 }
 
 export async function interrupt(id: string): Promise<boolean> {

@@ -168,6 +168,8 @@ export interface PermissionRequest {
   title?: string;
   description?: string;
   reason?: string;
+  // Set when "Always allow" (for the rest of this session) is on offer: what it would allow.
+  alwaysLabel?: string;
 }
 
 // Claude Code's permission modes (the SDK's PermissionMode).

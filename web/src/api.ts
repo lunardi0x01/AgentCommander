@@ -84,8 +84,8 @@ export const api = {
     request<HandoffResult>("POST", `/api/sessions/${id}/handoff`, { dir, ...settings, trust }),
   cancelHandOff: (id: string) => request<void>("DELETE", `/api/sessions/${id}/handoff`),
   interrupt: (id: string) => request<void>("POST", `/api/sessions/${id}/interrupt`, {}),
-  answerPermission: (id: string, toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>) =>
-    request<void>("POST", `/api/sessions/${id}/permissions/${toolUseId}`, { allow, mode, answers }),
+  answerPermission: (id: string, toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean) =>
+    request<void>("POST", `/api/sessions/${id}/permissions/${toolUseId}`, { allow, mode, answers, always }),
 
   deleteSessions: (sessions: Array<{ id: string; dir: string }>) =>
     request<TrashResult>("POST", "/api/sessions/delete", { sessions }),

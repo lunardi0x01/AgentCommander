@@ -217,7 +217,7 @@ export class GeminiRun {
   }
 
   // `answers`: for a question, question text → the chosen option's label.
-  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>): boolean {
+  answer(toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean): boolean {
     const entry = this.pending.get(toolUseId);
     if (!entry) return false;
     this.pending.delete(toolUseId);
@@ -231,17 +231,21 @@ export class GeminiRun {
       }
       return true;
     }
-    entry.resolve(this.outcome(entry, allow, answers));
+    entry.resolve(this.outcome(entry, allow, answers, always));
     this.update({ status: this.pending.size ? "waiting" : "working" });
     return true;
   }
 
-  private outcome(entry: Pending, allow: boolean, answers?: Record<string, string>) {
+  private outcome(entry: Pending, allow: boolean, answers?: Record<string, string>, always?: boolean) {
     const cancelled = { outcome: { outcome: "cancelled" } };
     const selected = (option?: AcpOption) => (option ? { outcome: { outcome: "selected", optionId: option.optionId } } : cancelled);
     if (entry.question) {
       const label = allow ? Object.values(answers ?? {})[0] : undefined;
       return selected(entry.options.find((o) => o.name === label));
+    }
+    if (allow && always) {
+      const forever = entry.options.find((o) => o.kind === "allow_always");
+      if (forever) return selected(forever);
     }
     if (allow) return selected(entry.options.find((o) => o.kind === "allow_once") ?? entry.options.find((o) => o.kind?.startsWith("allow")));
     return selected(entry.options.find((o) => o.kind === "reject_once") ?? entry.options.find((o) => o.kind?.startsWith("reject")));
@@ -271,6 +275,10 @@ export class GeminiRun {
           },
         }
       : { toolUseId: id, toolName: name, input, title };
+    // agy offers "allow always" itself; not for edits, which keep needing a click.
+    if (!question && options.some((o) => o.kind === "allow_always") && !["edit", "delete", "move"].includes(String(call.kind))) {
+      request.alwaysLabel = name;
+    }
     return new Promise((resolve) => {
       this.pending.set(id, { request, options, question, resolve });
       this.update({ status: "waiting" });

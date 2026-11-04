@@ -30,7 +30,7 @@ interface Props {
   onSend: (text: string, files: Attachment[]) => Promise<void>;
   onInterrupt: () => Promise<void>;
   onClose: () => Promise<void>; // end the session's Claude process, here or elsewhere
-  onAnswer: (toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>) => Promise<void>;
+  onAnswer: (toolUseId: string, allow: boolean, mode?: PermissionMode, answers?: Record<string, string>, always?: boolean) => Promise<void>;
   settings: Required<SessionSettings>; // in force, or what a new run starts with
   models: ModelOption[];
   modes?: PermissionMode[]; // the permission modes the session's agent has; absent: all
